@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { dbPromise } from "../db/db";
+import { pairEvents } from "../utils/pairEvents";
 
 type EventRecord = {
   event_id: string;
@@ -15,8 +16,13 @@ export default function SupervisorView() {
   useEffect(() => {
     async function loadEvents() {
       const db = await dbPromise;
-      const allEvents = await db.getAll("events");
+      const allEvents: EventRecord[] = await db.getAll("events");
+
       setEvents(allEvents);
+
+      // 🔴 THIS IS THE STEP YOU CARE ABOUT
+      const windows = pairEvents(allEvents);
+      console.log("TIME WINDOWS", windows);
     }
 
     loadEvents();
