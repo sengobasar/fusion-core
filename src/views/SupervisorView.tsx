@@ -13,7 +13,9 @@ type EventRecord = {
 
 export default function SupervisorView() {
   const [events, setEvents] = useState<EventRecord[]>([]);
-  const [grouped, setGrouped] = useState<Record<string, number>>({});
+  const [downtimeByHouse, setDowntimeByHouse] = useState<
+    Record<string, Record<string, number>>
+  >({});
 
   useEffect(() => {
     async function loadEvents() {
@@ -22,11 +24,25 @@ export default function SupervisorView() {
 
       setEvents(allEvents);
 
-      // semantic layers
-      const windows = pairEvents(allEvents);
-      const groupedResult = groupWindows(windows);
+      // 🔹 GROUP EVENTS BY HOUSE (CRITICAL FIX)
+      const eventsByHouse: Record<string, EventRecord[]> = {};
 
-      setGrouped(groupedResult);
+      for (const e of allEvents) {
+        const hid = e.house_id.toUpperCase();
+        if (!eventsByHouse[hid]) eventsByHouse[hid] = [];
+        eventsByHouse[hid].push(e);
+      }
+
+      // 🔹 COMPUTE DOWNTIME PER HOUSE
+      const result: Record<string, Record<string, number>> = {};
+
+      for (const houseId in eventsByHouse) {
+        const windows = pairEvents(eventsByHouse[houseId]);
+        const grouped = groupWindows(windows);
+        result[houseId] = grouped;
+      }
+
+      setDowntimeByHouse(result);
     }
 
     loadEvents();
@@ -36,32 +52,41 @@ export default function SupervisorView() {
     <div style={{ padding: "16px" }}>
       <h2>Supervisor Panel</h2>
 
-      {/* RAW EVENT LOG (unchanged) */}
+      {/* RAW EVENT LOG */}
       <h3>Event Log</h3>
       {events.length === 0 && <p>No events yet.</p>}
       {events.map((e) => (
         <div
           key={e.event_id}
-          style={{
-            padding: "6px 0",
-            borderBottom: "1px solid #ccc",
-          }}
+          style={{ padding: "6px 0", borderBottom: "1px solid #ccc" }}
         >
           <strong>{e.house_id}</strong> → {e.event_type} →{" "}
           <small>{e.timestamp}</small>
         </div>
       ))}
 
-      {/* GROUPED DOWNTIME */}
-      <h3 style={{ marginTop: "24px" }}>Downtime Summary</h3>
+      {/* PER-HOUSE DOWNTIME */}
+      <h3 style={{ marginTop: "24px" }}>Downtime Summary (Per House)</h3>
 
-      {Object.keys(grouped).length === 0 && (
+      {Object.keys(downtimeByHouse).length === 0 && (
         <p>No completed downtime windows yet.</p>
       )}
 
-      {Object.entries(grouped).map(([type, minutes]) => (
-        <div key={type}>
-          <strong>{type}</strong> → {minutes} min
+      {Object.entries(downtimeByHouse).map(([houseId, summary]) => (
+        <div key={houseId} style={{ marginBottom: "16px" }}>
+          <strong>{houseId}</strong>
+
+          {Object.keys(summary).length === 0 && (
+            <div style={{ marginLeft: "12px" }}>
+              No completed downtime yet.
+            </div>
+          )}
+
+          {Object.entries(summary).map(([type, minutes]) => (
+            <div key={type} style={{ marginLeft: "12px" }}>
+              {type} → {minutes} min
+            </div>
+          ))}
         </div>
       ))}
     </div>
