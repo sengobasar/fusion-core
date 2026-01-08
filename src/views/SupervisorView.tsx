@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { dbPromise } from "../db/db";
 import { pairEvents } from "../utils/pairEvents";
 import { groupWindows } from "../utils/groupWindows";
+import { checkThresholds } from "../utils/checkThresholds";
+import { checkOpenWindows } from "../utils/checkOpenWindows";
 
 type EventRecord = {
   event_id: string;
@@ -11,20 +13,29 @@ type EventRecord = {
   timestamp: string;
 };
 
+type Alert = {
+  house_id: string;
+  type: string;
+  reason: string;
+  durationMinutes: number;
+};
+
 export default function SupervisorView() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [downtimeByHouse, setDowntimeByHouse] = useState<
     Record<string, Record<string, number>>
   >({});
+  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   useEffect(() => {
-    async function loadEvents() {
+    let interval: number;
+
+    async function loadAndAnalyze() {
       const db = await dbPromise;
       const allEvents: EventRecord[] = await db.getAll("events");
-
       setEvents(allEvents);
 
-      // 🔹 GROUP EVENTS BY HOUSE (CRITICAL FIX)
+      // 🔹 GROUP EVENTS BY HOUSE
       const eventsByHouse: Record<string, EventRecord[]> = {};
 
       for (const e of allEvents) {
@@ -33,26 +44,46 @@ export default function SupervisorView() {
         eventsByHouse[hid].push(e);
       }
 
-      // 🔹 COMPUTE DOWNTIME PER HOUSE
-      const result: Record<string, Record<string, number>> = {};
+      const downtimeResult: Record<string, Record<string, number>> = {};
+      const alertResult: Alert[] = [];
 
+      // 🔹 ANALYZE PER HOUSE
       for (const houseId in eventsByHouse) {
-        const windows = pairEvents(eventsByHouse[houseId]);
-        const grouped = groupWindows(windows);
-        result[houseId] = grouped;
+        const houseEvents = eventsByHouse[houseId];
+
+        // Completed windows
+        const windows = pairEvents(houseEvents);
+        downtimeResult[houseId] = groupWindows(windows);
+
+        // Completed-window alerts
+        alertResult.push(
+          ...checkThresholds(houseId, windows)
+        );
+
+        // 🔴 OPEN-WINDOW ALERTS (NO RESUME)
+        alertResult.push(
+          ...checkOpenWindows(houseId, houseEvents)
+        );
       }
 
-      setDowntimeByHouse(result);
+      setDowntimeByHouse(downtimeResult);
+      setAlerts(alertResult);
     }
 
-    loadEvents();
+    // Initial load
+    loadAndAnalyze();
+
+    // 🔁 RECHECK EVERY MINUTE (CRITICAL FOR OPEN WINDOWS)
+    interval = window.setInterval(loadAndAnalyze, 60_000);
+
+    return () => clearInterval(interval);
   }, []);
 
   return (
     <div style={{ padding: "16px" }}>
       <h2>Supervisor Panel</h2>
 
-      {/* RAW EVENT LOG */}
+      {/* ================= RAW EVENTS ================= */}
       <h3>Event Log</h3>
       {events.length === 0 && <p>No events yet.</p>}
       {events.map((e) => (
@@ -65,8 +96,10 @@ export default function SupervisorView() {
         </div>
       ))}
 
-      {/* PER-HOUSE DOWNTIME */}
-      <h3 style={{ marginTop: "24px" }}>Downtime Summary (Per House)</h3>
+      {/* ================= DOWNTIME ================= */}
+      <h3 style={{ marginTop: "24px" }}>
+        Downtime Summary (Per House)
+      </h3>
 
       {Object.keys(downtimeByHouse).length === 0 && (
         <p>No completed downtime windows yet.</p>
@@ -87,6 +120,29 @@ export default function SupervisorView() {
               {type} → {minutes} min
             </div>
           ))}
+        </div>
+      ))}
+
+      {/* ================= ALERTS ================= */}
+      <h3 style={{ marginTop: "24px" }}>Alerts</h3>
+
+      {alerts.length === 0 && (
+        <p>No alerts detected.</p>
+      )}
+
+      {alerts.map((a, idx) => (
+        <div
+          key={idx}
+          style={{
+            padding: "8px",
+            marginBottom: "8px",
+            border: "1px solid #f5c2c2",
+            background: "#fff5f5",
+          }}
+        >
+          <strong>{a.house_id}</strong> → {a.type}
+          <br />
+          {a.reason} ({a.durationMinutes} min)
         </div>
       ))}
     </div>
