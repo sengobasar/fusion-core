@@ -1,19 +1,23 @@
 import { useEffect, useState } from "react";
 import { dbPromise } from "../db/db";
+import { useTranslation } from "../hooks/useTranslation";
+import { LANG_LABELS } from "../i18n/dictionary";
+import type { Language } from "../i18n/dictionary";
 
+// Keep IDs internal, but we will use keys for labels now
 const EVENT_TYPES = [
-  { id: "THREAD_BREAK", label: "Thread Break", color: "#f59e0b" }, // Warning
-  { id: "NO_MATERIAL", label: "No Material", color: "#ef4444" },  // Critical
-  { id: "NO_ORDER", label: "No Order", color: "#f97316" },     // Warning
-  { id: "RESUME", label: "Resume Work", color: "#22c55e" },      // Success
+  { id: "THREAD_BREAK", labelKey: "THREAD_BREAK", color: "#f59e0b" },
+  { id: "NO_MATERIAL", labelKey: "NO_MATERIAL", color: "#ef4444" },
+  { id: "NO_ORDER", labelKey: "NO_ORDER", color: "#f97316" },
+  { id: "RESUME", labelKey: "RESUME", color: "#22c55e" },
 ];
 
 export default function WorkerView() {
+  const { t, lang, setLang } = useTranslation();
   const [houseId, setHouseId] = useState<string | null>(localStorage.getItem("house_id"));
   const [activeHouses, setActiveHouses] = useState<string[]>([]);
   const [lastEvent, setLastEvent] = useState<string | null>(null);
 
-  // Load available houses if not selected
   useEffect(() => {
     if (!houseId) {
       dbPromise.then(async (db) => {
@@ -21,18 +25,13 @@ export default function WorkerView() {
         setActiveHouses(houses.filter((h: any) => h.active).map((h: any) => h.house_id));
       });
     } else {
-      // Load last state (mocking this by checking last event for today could be better, but simple for now)
-      // ideally we would read the last event from DB for this house
       restoreState();
     }
   }, [houseId]);
 
   async function restoreState() {
-    // Find the very last event for this house to set initial status
-    // This is a simple improvement to show correct state on reload
     const db = await dbPromise;
     const allEvents = await db.getAll("events");
-    // Filter for this house and sort by time desc
     const houseEvents = allEvents
       .filter((e: any) => e.house_id === houseId)
       .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -54,8 +53,8 @@ export default function WorkerView() {
     await db.put("events", {
       event_id: crypto.randomUUID(),
       house_id: houseId,
-      order_id: "ORD-001", // Placeholder
-      event_type: eventType,
+      order_id: "ORD-001",
+      event_type: eventType, // INTERNAL KEY ONLY
       timestamp: new Date().toISOString(),
       source: "PWA",
     });
@@ -63,13 +62,30 @@ export default function WorkerView() {
     setLastEvent(eventType);
   }
 
+  // Language Switcher Component
+  const LanguageSelector = () => (
+    <select
+      value={lang}
+      onChange={(e) => setLang(e.target.value as Language)}
+      style={{ padding: "8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", marginLeft: "auto" }}
+    >
+      {(Object.keys(LANG_LABELS) as Language[]).map((l) => (
+        <option key={l} value={l}>{LANG_LABELS[l]}</option>
+      ))}
+    </select>
+  );
+
   // 1. SELECT HOUSE SCREEN
   if (!houseId) {
     return (
       <div style={{ padding: "var(--space-lg)", maxWidth: "480px", margin: "0 auto", textAlign: "center" }}>
-        <h2 style={{ marginBottom: "var(--space-md)" }}>Select Your Station</h2>
+        <div className="flex-row" style={{ justifyContent: "flex-end", marginBottom: "var(--space-md)" }}>
+          <LanguageSelector />
+        </div>
+
+        <h2 style={{ marginBottom: "var(--space-md)" }}>{t("SELECT_HOUSE")}</h2>
         <div className="flex-col gap-md">
-          {activeHouses.length === 0 && <p>No active houses found. Please ask supervisor to configure.</p>}
+          {activeHouses.length === 0 && <p>{t("NO_HOUSES_FOUND")}</p>}
           {activeHouses.map(id => (
             <button
               key={id}
@@ -95,9 +111,17 @@ export default function WorkerView() {
   // 2. OPERATOR INTERFACE
   const isProduction = !lastEvent || lastEvent === "RESUME";
   const currentIssue = !isProduction ? EVENT_TYPES.find(e => e.id === lastEvent) : null;
+  // Fallback for issue label if not found in list (e.g. legacy data)
+  const issueLabel = currentIssue ? t(currentIssue.labelKey as any) : lastEvent;
 
   return (
     <div style={{ padding: "var(--space-md)", height: "100%", display: "flex", flexDirection: "column" }}>
+
+      {/* HEADER WITH LANG SWITCHER */}
+      <div className="flex-row" style={{ marginBottom: "var(--space-md)", justifyContent: "space-between" }}>
+        <div style={{ fontWeight: 600 }}>{t("APP_TITLE")}</div>
+        <LanguageSelector />
+      </div>
 
       {/* STATUS HEADER */}
       <div
@@ -111,45 +135,23 @@ export default function WorkerView() {
         }}
       >
         <div style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "4px" }}>
-          Connected to {houseId}
+          {t("CONNECTED_TO")} {houseId}
         </div>
         <div style={{
           fontSize: "1.5rem",
           fontWeight: "bold",
           color: isProduction ? "#166534" : "#991b1b"
         }}>
-          {isProduction ? "Production Running" : `Issue: ${currentIssue?.label || lastEvent}`}
+          {isProduction ? t("STATUS_RUNNING") : `${t("STATUS_ISSUE")}: ${issueLabel}`}
         </div>
       </div>
 
       {/* ACTIONS */}
       <div className="flex-col gap-md" style={{ flex: 1 }}>
         {EVENT_TYPES.map((type) => {
-          if (type.id === "RESUME" && isProduction) return null; // Don't show Resume if already running
-          if (type.id !== "RESUME" && !isProduction) return null; // Don't show Break options if already halted (simplified flow)
-
-          // Actually, usually you might want to switch break types, but for "Low cognitive load", 
-          // maybe we only show RESUME when broken, and BREAKS when running.
-          // Let's stick to the prompt: "Show only large, simple action buttons".
-          // If I hide buttons it might be confusing if they picked the wrong one.
-          // Let's show RESUME always if broken, and others always if running.
-
           const isResume = type.id === "RESUME";
-
-          // LOGIC: 
-          // If RUNNING: Show All Breaks.
-          // If BROKEN: Show RESUME + maybe Switch Break? 
-          // Prompt says: "Issue active: NO_MATERIAL" ... "Buttons must be large".
-          // For simplicity/clarity:
-          // - If Running: Show Breaks.
-          // - If Broken: Show Resume. (And maybe "Change Reason" which is just showing the breaks again?)
-          // Let's keep it extremely simple.
-
-          if (isProduction && isResume) return null; // Hide Resume when running
-          if (!isProduction && !isResume) return null; // Hide Breaks when broken (must resume first)
-
-          // Actually, what if they hit "No Material" but meant "Thread Break"? 
-          // They would have to Resume then break again. That is acceptable for V1 simplicity.
+          if (isProduction && isResume) return null;
+          if (!isProduction && !isResume) return null;
 
           return (
             <button
@@ -158,10 +160,8 @@ export default function WorkerView() {
               style={{
                 flex: 1,
                 maxHeight: "120px",
-                backgroundColor: type.id === "RESUME" ? "var(--color-bg-card)" : type.color, // Color for breaks, White for resume? Or inverse?
-                // Let's make breaks colorful and Resume Green.
-                // Wait, prompt says: "High-contrast".
-
+                // Use light background for Resume to be distinct? Or keep consistent?
+                // Prompt said "Buttons must be large, high-contrast".
                 background: type.id === "RESUME" ? "#22c55e" : "white",
                 color: type.id === "RESUME" ? "white" : type.color,
                 border: `2px solid ${type.color}`,
@@ -175,15 +175,21 @@ export default function WorkerView() {
                 boxShadow: "0 4px 6px rgba(0,0,0,0.05)"
               }}
             >
-              {type.label}
+              {t(type.labelKey as any)}
             </button>
           );
         })}
 
-        {/* If broken, maybe show a small "Correction" button? */}
         {!isProduction && (
           <div style={{ marginTop: "auto", textAlign: "center" }}>
-            <p className="text-sm">Mistake? <span style={{ textDecoration: "underline", cursor: "pointer" }} onClick={() => setLastEvent(null)}>Cancel Status</span></p>
+            <p className="text-sm">
+              <span
+                style={{ textDecoration: "underline", cursor: "pointer" }}
+                onClick={() => setLastEvent(null)}
+              >
+                {t("MISTAKE_CANCEL")}
+              </span>
+            </p>
           </div>
         )}
       </div>
@@ -193,7 +199,7 @@ export default function WorkerView() {
           onClick={() => { localStorage.removeItem("house_id"); setHouseId(null); }}
           style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "0.875rem" }}
         >
-          Unlink Device
+          {t("UNLINK")}
         </button>
       </div>
     </div>
