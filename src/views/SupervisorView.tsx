@@ -18,7 +18,29 @@ type Alert = {
   type: string;
   reason: string;
   durationMinutes: number;
+  severity: "warning" | "critical";
 };
+
+/* ================= SEVERITY LOGIC ================= */
+function getSeverity(
+  type: string,
+  durationMinutes: number
+): "warning" | "critical" {
+  if (type === "NO_MATERIAL") {
+    return durationMinutes >= 60 ? "critical" : "warning";
+  }
+
+  if (type === "THREAD_BREAK") {
+    return durationMinutes >= 40 ? "critical" : "warning";
+  }
+
+  if (type === "NO_ORDER") {
+    return durationMinutes >= 240 ? "critical" : "warning";
+  }
+
+  return "warning";
+}
+/* ================================================= */
 
 export default function SupervisorView() {
   const [events, setEvents] = useState<EventRecord[]>([]);
@@ -51,19 +73,22 @@ export default function SupervisorView() {
       for (const houseId in eventsByHouse) {
         const houseEvents = eventsByHouse[houseId];
 
-        // Completed windows
+        // Completed windows → downtime
         const windows = pairEvents(houseEvents);
         downtimeResult[houseId] = groupWindows(windows);
 
-        // Completed-window alerts
-        alertResult.push(
-          ...checkThresholds(houseId, windows)
-        );
+        // Completed-window alerts (existing)
+        const completedAlerts = checkThresholds(houseId, windows);
 
-        // 🔴 OPEN-WINDOW ALERTS (NO RESUME)
-        alertResult.push(
-          ...checkOpenWindows(houseId, houseEvents)
-        );
+        // Open-window alerts
+        const openAlerts = checkOpenWindows(houseId, houseEvents);
+
+        for (const a of [...completedAlerts, ...openAlerts]) {
+          alertResult.push({
+            ...a,
+            severity: getSeverity(a.type, a.durationMinutes),
+          });
+        }
       }
 
       setDowntimeByHouse(downtimeResult);
@@ -73,7 +98,7 @@ export default function SupervisorView() {
     // Initial load
     loadAndAnalyze();
 
-    // 🔁 RECHECK EVERY MINUTE (CRITICAL FOR OPEN WINDOWS)
+    // 🔁 RECHECK EVERY MINUTE (FOR OPEN WINDOWS)
     interval = window.setInterval(loadAndAnalyze, 60_000);
 
     return () => clearInterval(interval);
@@ -126,21 +151,28 @@ export default function SupervisorView() {
       {/* ================= ALERTS ================= */}
       <h3 style={{ marginTop: "24px" }}>Alerts</h3>
 
-      {alerts.length === 0 && (
-        <p>No alerts detected.</p>
-      )}
+      {alerts.length === 0 && <p>No alerts detected.</p>}
 
       {alerts.map((a, idx) => (
         <div
           key={idx}
           style={{
-            padding: "8px",
+            padding: "10px",
             marginBottom: "8px",
-            border: "1px solid #f5c2c2",
-            background: "#fff5f5",
+            borderLeft:
+              a.severity === "critical"
+                ? "6px solid #d32f2f"
+                : "6px solid #fbc02d",
+            background:
+              a.severity === "critical"
+                ? "#fff1f1"
+                : "#fffbea",
           }}
         >
-          <strong>{a.house_id}</strong> → {a.type}
+          <strong>
+            {a.severity === "critical" ? "🔴" : "🟡"} {a.house_id}
+          </strong>{" "}
+          → {a.type}
           <br />
           {a.reason} ({a.durationMinutes} min)
         </div>
