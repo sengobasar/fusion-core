@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { dbPromise } from "../db/db";
 import { pairEvents } from "../utils/pairEvents";
 import { groupWindows } from "../utils/groupWindows";
-import { checkThresholds } from "../utils/checkThresholds";
 import { checkOpenWindows } from "../utils/checkOpenWindows";
 import HouseCard from "../components/HouseCard";
+import { ISSUE_TO_ERP_LOSS } from "../erp/erpMapping";
+import { DAILY_AVAILABLE_MINUTES } from "../config/capacity";
+
+/* ================= TYPES ================= */
 
 type EventRecord = {
   event_id: string;
@@ -14,16 +17,10 @@ type EventRecord = {
   timestamp: string;
 };
 
-type Alert = {
-  house_id: string;
-  type: string;
-  reason: string;
-  durationMinutes: number;
-};
+/* ================= VIEW ================= */
 
 export default function SupervisorView() {
   const [events, setEvents] = useState<EventRecord[]>([]);
-  // alerts removed
   const [houseStats, setHouseStats] = useState<Record<string, any>>({});
   const [houseCardsData, setHouseCardsData] = useState<any[]>([]);
   const [summary, setSummary] = useState({
@@ -49,7 +46,8 @@ export default function SupervisorView() {
     );
 
     allEvents.sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      (a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
     setEvents(allEvents);
 
@@ -59,13 +57,11 @@ export default function SupervisorView() {
       eventsByHouse[e.house_id].push(e);
     }
 
-    const calculatedAlerts: Alert[] = [];
     const houseDowntime: Record<string, Record<string, number>> = {};
     const issueCounts: Record<string, number> = {};
     let currentIntervenedCount = 0;
     let maxDuration = 0;
 
-    // ---- PER HOUSE PROCESSING ----
     const cards: any[] = [];
 
     for (const house of allHouses) {
@@ -76,12 +72,8 @@ export default function SupervisorView() {
       const grouped = groupWindows(windows);
       houseDowntime[houseId] = grouped;
 
-      // Alerts (existing logic)
-      calculatedAlerts.push(...checkThresholds(houseId, windows));
       const openAlert = checkOpenWindows(houseId, houseEvents)[0];
-      if (openAlert) calculatedAlerts.push(openAlert);
 
-      // Snapshot metrics
       if (
         houseEvents.length > 0 &&
         houseEvents[0].event_type !== "RESUME" &&
@@ -95,33 +87,47 @@ export default function SupervisorView() {
 
       for (const w of windows) {
         issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
-        if (w.durationMinutes > maxDuration)
+        if (w.durationMinutes > maxDuration) {
           maxDuration = w.durationMinutes;
+        }
       }
 
-      // ---- HOUSE CARD DERIVATION (Layer 2) ----
+      /* ===== TIME MATH (STEP 2) ===== */
+
       const idleMinutes = Object.values(grouped).reduce(
         (a: any, b: any) => a + b,
         0
       );
 
-      const workedMinutes = Math.max(0, 8 * 60 - idleMinutes);
+      const availableMinutes = DAILY_AVAILABLE_MINUTES;
+      const workedMinutes = Math.max(0, availableMinutes - idleMinutes);
+
+      const utilization =
+        availableMinutes > 0
+          ? workedMinutes / availableMinutes
+          : 0;
+
+      const mandays = workedMinutes / DAILY_AVAILABLE_MINUTES;
 
       let status: "RUNNING" | "INTERRUPTED" | "INACTIVE" = "RUNNING";
       if (!house.active) status = "INACTIVE";
       else if (openAlert) status = "INTERRUPTED";
 
-      const dominantIssue =
+      const dominantIssueRaw =
         Object.entries(grouped).sort((a: any, b: any) => b[1] - a[1])[0]?.[0];
 
       cards.push({
-        houseId,
-        cluster: house.ward || house.cluster_id,
+        houseId: house.house_id,                 // cost_center_id
+        cluster: house.ward || house.cluster_id, // org_unit
         active: house.active,
         status,
         idleMinutes,
         workedMinutes,
-        dominantIssue,
+        utilization, // 0–1
+        mandays,     // capacity equivalent
+        dominantIssue: dominantIssueRaw
+          ? ISSUE_TO_ERP_LOSS[dominantIssueRaw] ?? dominantIssueRaw
+          : "None",
       });
     }
 
@@ -134,14 +140,13 @@ export default function SupervisorView() {
       }
     }
 
-    // setAlerts(calculatedAlerts);
     setHouseStats(houseDowntime);
     setHouseCardsData(cards);
     setSummary({
       totalHouses: activeHouseIds.size,
       activeInteractions: currentIntervenedCount,
       longestInterruption: maxDuration,
-      mostFrequentIssue: topIssue,
+      mostFrequentIssue: ISSUE_TO_ERP_LOSS[topIssue] ?? topIssue,
     });
   }
 
@@ -149,7 +154,6 @@ export default function SupervisorView() {
     <div style={{ padding: "var(--space-lg)", maxWidth: "1200px", margin: "0 auto" }}>
       <h2>Production Overview</h2>
 
-      {/* SNAPSHOT */}
       <section style={{ marginBottom: "var(--space-xl)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "16px" }}>
           <MetricCard label="Active Houses" value={summary.totalHouses} />
@@ -159,18 +163,11 @@ export default function SupervisorView() {
         </div>
       </section>
 
-      {/* HOUSE STATUS (NEW – Layer 2) */}
       <section style={{ marginBottom: "var(--space-xl)" }}>
         <h3>House Status</h3>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: "var(--space-md)",
-          }}
-        >
-          {houseCardsData.map((h) => (
-            <HouseCard key={h.houseId} {...h} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--space-md)" }}>
+          {houseCardsData.map((h, i) => (
+            <HouseCard key={i} {...h} />
           ))}
         </div>
       </section>
@@ -217,31 +214,21 @@ export default function SupervisorView() {
       {/* EVENT LOG */}
       <section>
         <h3>Recent Event Log</h3>
-        <div className="card" style={{ maxHeight: "300px", overflowY: "auto", padding: 0 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
-            <thead style={{ background: "#f8fafc", position: "sticky", top: 0 }}>
+        <div className="card" style={{ maxHeight: "300px", overflowY: "auto" }}>
+          <table style={{ width: "100%", fontSize: "0.875rem" }}>
+            <thead>
               <tr>
-                <th style={{ padding: "12px", textAlign: "left", borderBottom: "1px solid var(--color-border)" }}>Time</th>
-                <th style={{ padding: "12px", textAlign: "left", borderBottom: "1px solid var(--color-border)" }}>House</th>
-                <th style={{ padding: "12px", textAlign: "left", borderBottom: "1px solid var(--color-border)" }}>Event</th>
+                <th>Time</th>
+                <th>House</th>
+                <th>Event</th>
               </tr>
             </thead>
             <tbody>
-              {events.slice(0, 50).map(e => (
-                <tr key={e.event_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "12px" }}>{new Date(e.timestamp).toLocaleTimeString()}</td>
-                  <td style={{ padding: "12px", fontWeight: 600 }}>{e.house_id}</td>
-                  <td style={{ padding: "12px" }}>
-                    <span style={{
-                      padding: "2px 8px",
-                      borderRadius: "4px",
-                      background: e.event_type === "RESUME" ? "#dcfce7" : "#fee2e2",
-                      color: e.event_type === "RESUME" ? "#166534" : "#991b1b",
-                      fontWeight: 500
-                    }}>
-                      {e.event_type}
-                    </span>
-                  </td>
+              {events.slice(0, 50).map((e) => (
+                <tr key={e.event_id}>
+                  <td>{new Date(e.timestamp).toLocaleTimeString()}</td>
+                  <td>{e.house_id}</td>
+                  <td>{e.event_type}</td>
                 </tr>
               ))}
             </tbody>
@@ -252,10 +239,14 @@ export default function SupervisorView() {
   );
 }
 
+/* ================= UI HELPERS ================= */
+
+/* ================= UI HELPERS ================= */
+
 function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="card">
-      <div className="text-sm" style={{ color: "var(--color-text-secondary)", marginBottom: "4px" }}>{label}</div>
+      <div className="text-sm">{label}</div>
       <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{value}</div>
     </div>
   );
