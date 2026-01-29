@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { dbPromise } from "../db/db";
 import { pairEvents } from "../utils/pairEvents";
 import { groupWindows } from "../utils/groupWindows";
+import { checkThresholds } from "../utils/checkThresholds";
 import { checkOpenWindows } from "../utils/checkOpenWindows";
 import HouseCard from "../components/HouseCard";
 import { ISSUE_TO_ERP_LOSS } from "../erp/erpMapping";
@@ -15,6 +16,13 @@ type EventRecord = {
   order_id: string;
   event_type: string;
   timestamp: string;
+};
+
+type Alert = {
+  house_id: string;
+  type: string;
+  reason: string;
+  durationMinutes: number;
 };
 
 /* ================= VIEW ================= */
@@ -46,8 +54,7 @@ export default function SupervisorView() {
     );
 
     allEvents.sort(
-      (a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
     setEvents(allEvents);
 
@@ -57,6 +64,7 @@ export default function SupervisorView() {
       eventsByHouse[e.house_id].push(e);
     }
 
+    const calculatedAlerts: Alert[] = [];
     const houseDowntime: Record<string, Record<string, number>> = {};
     const issueCounts: Record<string, number> = {};
     let currentIntervenedCount = 0;
@@ -64,6 +72,7 @@ export default function SupervisorView() {
 
     const cards: any[] = [];
 
+    /* ===== PER HOUSE ===== */
     for (const house of allHouses) {
       const houseId = house.house_id;
       const houseEvents = eventsByHouse[houseId] || [];
@@ -72,7 +81,9 @@ export default function SupervisorView() {
       const grouped = groupWindows(windows);
       houseDowntime[houseId] = grouped;
 
+      calculatedAlerts.push(...checkThresholds(houseId, windows));
       const openAlert = checkOpenWindows(houseId, houseEvents)[0];
+      if (openAlert) calculatedAlerts.push(openAlert);
 
       if (
         houseEvents.length > 0 &&
@@ -87,12 +98,10 @@ export default function SupervisorView() {
 
       for (const w of windows) {
         issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
-        if (w.durationMinutes > maxDuration) {
-          maxDuration = w.durationMinutes;
-        }
+        if (w.durationMinutes > maxDuration) maxDuration = w.durationMinutes;
       }
 
-      /* ===== TIME MATH (STEP 2) ===== */
+      /* ===== STEP 2: TIME MATH (DETERMINISTIC) ===== */
 
       const idleMinutes = Object.values(grouped).reduce(
         (a: any, b: any) => a + b,
@@ -101,12 +110,8 @@ export default function SupervisorView() {
 
       const availableMinutes = DAILY_AVAILABLE_MINUTES;
       const workedMinutes = Math.max(0, availableMinutes - idleMinutes);
-
       const utilization =
-        availableMinutes > 0
-          ? workedMinutes / availableMinutes
-          : 0;
-
+        availableMinutes > 0 ? workedMinutes / availableMinutes : 0;
       const mandays = workedMinutes / DAILY_AVAILABLE_MINUTES;
 
       let status: "RUNNING" | "INTERRUPTED" | "INACTIVE" = "RUNNING";
@@ -115,6 +120,8 @@ export default function SupervisorView() {
 
       const dominantIssueRaw =
         Object.entries(grouped).sort((a: any, b: any) => b[1] - a[1])[0]?.[0];
+
+      /* ===== HOUSE CARD (ERP-READY) ===== */
 
       cards.push({
         houseId: house.house_id,                 // cost_center_id
@@ -150,6 +157,8 @@ export default function SupervisorView() {
     });
   }
 
+  /* ================= RENDER ================= */
+
   return (
     <div style={{ padding: "var(--space-lg)", maxWidth: "1200px", margin: "0 auto" }}>
       <h2>Production Overview</h2>
@@ -166,13 +175,12 @@ export default function SupervisorView() {
       <section style={{ marginBottom: "var(--space-xl)" }}>
         <h3>House Status</h3>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--space-md)" }}>
-          {houseCardsData.map((h, i) => (
-            <HouseCard key={i} {...h} />
+          {houseCardsData.map(h => (
+            <HouseCard key={h.houseId} {...h} />
           ))}
         </div>
       </section>
 
-      {/* DOWNTIME */}
       <section style={{ marginBottom: "var(--space-xl)" }}>
         <h3>Downtime Analysis (Today)</h3>
         <div className="card" style={{ padding: "var(--space-lg)" }}>
@@ -241,12 +249,10 @@ export default function SupervisorView() {
 
 /* ================= UI HELPERS ================= */
 
-/* ================= UI HELPERS ================= */
-
 function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="card">
-      <div className="text-sm">{label}</div>
+      <div className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{label}</div>
       <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{value}</div>
     </div>
   );
