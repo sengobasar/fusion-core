@@ -4,6 +4,7 @@ import { pairEvents } from "../utils/pairEvents";
 import { groupWindows } from "../utils/groupWindows";
 import { checkThresholds } from "../utils/checkThresholds";
 import { checkOpenWindows } from "../utils/checkOpenWindows";
+import HouseCard from "../components/HouseCard";
 
 type EventRecord = {
   event_id: string;
@@ -22,18 +23,19 @@ type Alert = {
 
 export default function SupervisorView() {
   const [events, setEvents] = useState<EventRecord[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  // alerts removed
   const [houseStats, setHouseStats] = useState<Record<string, any>>({});
+  const [houseCardsData, setHouseCardsData] = useState<any[]>([]);
   const [summary, setSummary] = useState({
     totalHouses: 0,
     activeInteractions: 0,
     longestInterruption: 0,
-    mostFrequentIssue: "None"
+    mostFrequentIssue: "None",
   });
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // Refresh every 30s
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -41,13 +43,16 @@ export default function SupervisorView() {
     const db = await dbPromise;
     const allEvents: EventRecord[] = await db.getAll("events");
     const allHouses = await db.getAll("houses");
-    const activeHouseIds = new Set(allHouses.filter((h: any) => h.active).map((h: any) => h.house_id));
 
-    // Sort events
-    allEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const activeHouseIds = new Set(
+      allHouses.filter((h: any) => h.active).map((h: any) => h.house_id)
+    );
+
+    allEvents.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
     setEvents(allEvents);
 
-    // Group by house
     const eventsByHouse: Record<string, EventRecord[]> = {};
     for (const e of allEvents) {
       if (!eventsByHouse[e.house_id]) eventsByHouse[e.house_id] = [];
@@ -56,29 +61,33 @@ export default function SupervisorView() {
 
     const calculatedAlerts: Alert[] = [];
     const houseDowntime: Record<string, Record<string, number>> = {};
+    const issueCounts: Record<string, number> = {};
     let currentIntervenedCount = 0;
     let maxDuration = 0;
-    const issueCounts: Record<string, number> = {};
 
-    // Process each house
-    for (const houseId of activeHouseIds) {
-      const houseEvents = eventsByHouse[houseId as string] || [];
-      // 1. History Analysis
+    // ---- PER HOUSE PROCESSING ----
+    const cards: any[] = [];
+
+    for (const house of allHouses) {
+      const houseId = house.house_id;
+      const houseEvents = eventsByHouse[houseId] || [];
+
       const windows = pairEvents(houseEvents);
       const grouped = groupWindows(windows);
-      houseDowntime[houseId as string] = grouped;
+      houseDowntime[houseId] = grouped;
 
-      // 2. Alert Checks (Historical)
-      calculatedAlerts.push(...checkThresholds(houseId as string, windows));
+      // Alerts (existing logic)
+      calculatedAlerts.push(...checkThresholds(houseId, windows));
+      const openAlert = checkOpenWindows(houseId, houseEvents)[0];
+      if (openAlert) calculatedAlerts.push(openAlert);
 
-      // 3. Current Status Checks (Open Windows)
-      const currentAlerts = checkOpenWindows(houseId as string, houseEvents);
-      calculatedAlerts.push(...currentAlerts);
-
-      // 4. Metrics
-      if (houseEvents.length > 0 && houseEvents[0].event_type !== "RESUME") {
+      // Snapshot metrics
+      if (
+        houseEvents.length > 0 &&
+        houseEvents[0].event_type !== "RESUME" &&
+        house.active
+      ) {
         currentIntervenedCount++;
-
         const start = new Date(houseEvents[0].timestamp).getTime();
         const duration = Math.round((Date.now() - start) / 60000);
         if (duration > maxDuration) maxDuration = duration;
@@ -86,8 +95,34 @@ export default function SupervisorView() {
 
       for (const w of windows) {
         issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
-        if (w.durationMinutes > maxDuration) maxDuration = w.durationMinutes;
+        if (w.durationMinutes > maxDuration)
+          maxDuration = w.durationMinutes;
       }
+
+      // ---- HOUSE CARD DERIVATION (Layer 2) ----
+      const idleMinutes = Object.values(grouped).reduce(
+        (a: any, b: any) => a + b,
+        0
+      );
+
+      const workedMinutes = Math.max(0, 8 * 60 - idleMinutes);
+
+      let status: "RUNNING" | "INTERRUPTED" | "INACTIVE" = "RUNNING";
+      if (!house.active) status = "INACTIVE";
+      else if (openAlert) status = "INTERRUPTED";
+
+      const dominantIssue =
+        Object.entries(grouped).sort((a: any, b: any) => b[1] - a[1])[0]?.[0];
+
+      cards.push({
+        houseId,
+        cluster: house.ward || house.cluster_id,
+        active: house.active,
+        status,
+        idleMinutes,
+        workedMinutes,
+        dominantIssue,
+      });
     }
 
     let topIssue = "None";
@@ -99,72 +134,50 @@ export default function SupervisorView() {
       }
     }
 
-    setAlerts(calculatedAlerts);
+    // setAlerts(calculatedAlerts);
     setHouseStats(houseDowntime);
+    setHouseCardsData(cards);
     setSummary({
       totalHouses: activeHouseIds.size,
       activeInteractions: currentIntervenedCount,
       longestInterruption: maxDuration,
-      mostFrequentIssue: topIssue
+      mostFrequentIssue: topIssue,
     });
   }
 
   return (
     <div style={{ padding: "var(--space-lg)", maxWidth: "1200px", margin: "0 auto" }}>
-      <div className="flex-row" style={{ justifyContent: "space-between", marginBottom: "var(--space-lg)" }}>
-        <div>
-          <h2 style={{ marginBottom: "var(--space-xs)" }}>Production Overview</h2>
-          <p className="text-sm">Real-time status of weaving cluster.</p>
-        </div>
-        <div className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
-          {new Date().toLocaleDateString()}
-        </div>
-      </div>
+      <h2>Production Overview</h2>
 
+      {/* SNAPSHOT */}
       <section style={{ marginBottom: "var(--space-xl)" }}>
-        <h3 className="text-lg">Critical Alerts</h3>
-        <div className="flex-col gap-sm">
-          {alerts.length === 0 && (
-            <div style={{ padding: "var(--space-md)", background: "#f0fdf4", borderRadius: "var(--radius-md)", color: "#166534", border: "1px solid #bbf7d0" }}>
-              No active critical alerts. Systems nominal.
-            </div>
-          )}
-          {alerts.map((a, idx) => {
-            const isSever = a.durationMinutes > 60 || a.type === "NO_MATERIAL";
-            return (
-              <div key={idx}
-                className="card flex-row"
-                style={{
-                  justifyContent: "space-between",
-                  borderLeft: `4px solid ${isSever ? "var(--color-critical)" : "var(--color-warning)"}`
-                }}
-              >
-                <div className="flex-row gap-md">
-                  <span style={{ fontWeight: 700, fontSize: "1.1rem" }}>{a.house_id}</span>
-                  <span style={{ padding: "2px 8px", borderRadius: "12px", background: "#f3f4f6", fontSize: "0.8rem", fontWeight: 600 }}>{a.type}</span>
-                  <span>{a.reason}</span>
-                </div>
-                <div style={{ fontWeight: 600, color: isSever ? "var(--color-critical)" : "var(--color-warning)" }}>
-                  {a.durationMinutes} min
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section style={{ marginBottom: "var(--space-xl)" }}>
-        <h3 className="text-lg">Execution Snapshot</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-md)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "16px" }}>
           <MetricCard label="Active Houses" value={summary.totalHouses} />
-          <MetricCard label="Currently Interrupted" value={summary.activeInteractions} highlight={summary.activeInteractions > 0} />
+          <MetricCard label="Currently Interrupted" value={summary.activeInteractions} />
           <MetricCard label="Longest Interruption" value={`${summary.longestInterruption} min`} />
           <MetricCard label="Most Frequent Issue" value={summary.mostFrequentIssue} />
         </div>
       </section>
 
+      {/* HOUSE STATUS (NEW – Layer 2) */}
       <section style={{ marginBottom: "var(--space-xl)" }}>
-        <h3 className="text-lg">Downtime Analysis (Today)</h3>
+        <h3>House Status</h3>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: "var(--space-md)",
+          }}
+        >
+          {houseCardsData.map((h) => (
+            <HouseCard key={h.houseId} {...h} />
+          ))}
+        </div>
+      </section>
+
+      {/* DOWNTIME */}
+      <section style={{ marginBottom: "var(--space-xl)" }}>
+        <h3>Downtime Analysis (Today)</h3>
         <div className="card" style={{ padding: "var(--space-lg)" }}>
           {Object.keys(houseStats).length === 0 && <p style={{ fontStyle: "italic" }}>No downtime recorded today.</p>}
 
@@ -201,8 +214,9 @@ export default function SupervisorView() {
         </div>
       </section>
 
+      {/* EVENT LOG */}
       <section>
-        <h3 className="text-lg">Recent Event Log</h3>
+        <h3>Recent Event Log</h3>
         <div className="card" style={{ maxHeight: "300px", overflowY: "auto", padding: 0 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
             <thead style={{ background: "#f8fafc", position: "sticky", top: 0 }}>
@@ -238,13 +252,11 @@ export default function SupervisorView() {
   );
 }
 
-function MetricCard({ label, value, highlight = false }: { label: string, value: string | number, highlight?: boolean }) {
+function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="card">
       <div className="text-sm" style={{ color: "var(--color-text-secondary)", marginBottom: "4px" }}>{label}</div>
-      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: highlight ? "var(--color-critical)" : "var(--color-text-primary)" }}>
-        {value}
-      </div>
+      <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{value}</div>
     </div>
   );
 }
