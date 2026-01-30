@@ -12,6 +12,13 @@ import {
   buildImpactComparison,
   IMPACT_DISCLAIMER,
 } from "../utils/impactFormula";
+import {
+  buildPredictiveSignals,
+} from "../utils/predictiveSignals";
+import {
+  buildPredictiveInsights,
+  type PredictiveInsight,
+} from "../utils/predictiveInsights";
 import HouseCard from "../components/HouseCard";
 import { ISSUE_TO_ERP_LOSS } from "../erp/erpMapping";
 import { DAILY_AVAILABLE_MINUTES } from "../config/capacity";
@@ -41,7 +48,9 @@ export default function SupervisorView() {
   const [houseCardsData, setHouseCardsData] = useState<any[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [actions, setActions] = useState<Action[]>([]);
+
   const [impact, setImpact] = useState<any>(null);
+  const [predictiveInsights, setPredictiveInsights] = useState<PredictiveInsight[]>([]);
   const [summary, setSummary] = useState({
     totalHouses: 0,
     activeInteractions: 0,
@@ -163,6 +172,26 @@ export default function SupervisorView() {
       DAILY_AVAILABLE_MINUTES
     );
 
+    /* -------- LAYER 6 — PREDICTIVE (Rule-based) -------- */
+
+    // Build issue count per house
+    const issueCountsByHouse: Record<string, Record<string, number>> = {};
+
+    for (const [houseId, grouped] of Object.entries(houseDowntime)) {
+      issueCountsByHouse[houseId] = {};
+      for (const [issue, minutes] of Object.entries(grouped)) {
+        if (minutes > 0) {
+          issueCountsByHouse[houseId][issue] =
+            (issueCountsByHouse[houseId][issue] || 0) + 1;
+        }
+      }
+    }
+
+    const predictiveSignals = buildPredictiveSignals(issueCountsByHouse);
+    const insights = buildPredictiveInsights(predictiveSignals);
+
+    setPredictiveInsights(insights);
+
     /* -------- Summary -------- */
     let topIssue = "None";
     let topCount = 0;
@@ -241,6 +270,22 @@ export default function SupervisorView() {
             {signals.map((s, i) => (
               <li key={i}>
                 ⚠ {s.type} — {s.houseId} ({s.durationMinutes} min, {s.severity})
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {predictiveInsights.length > 0 && (
+        <section style={{ marginBottom: "32px" }}>
+          <h3>Predictive Insights (Rule-based)</h3>
+          <p style={{ fontSize: "0.8rem", opacity: 0.7 }}>
+            Forward-looking insights derived from recent patterns. No automation.
+          </p>
+          <ul>
+            {predictiveInsights.map((p, i) => (
+              <li key={i}>
+                🔮 <strong>{p.houseId}</strong> — {p.message} ({p.confidence})
               </li>
             ))}
           </ul>
