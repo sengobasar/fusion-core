@@ -5,6 +5,7 @@ type House = {
   house_id: string;
   name?: string;
   ward?: string;
+  cost_center?: string; // NEW: ERP Mapping ID
   active: boolean;
 };
 
@@ -32,6 +33,7 @@ export default function SetupView() {
       house_id: form.house_id,
       name: form.name || "",
       ward: form.ward || "",
+      cost_center: form.cost_center || "",
       active: form.active ?? true,
     });
 
@@ -116,6 +118,22 @@ export default function SetupView() {
             </div>
           </div>
 
+          <div className="flex-col gap-sm">
+            <label className="text-sm" style={{ fontWeight: 500 }}>Cost Center (ERP ID)</label>
+            <input
+              type="text"
+              placeholder="e.g. CC-101 (Optional)"
+              value={form.cost_center || ""}
+              onChange={(e) => setForm({ ...form, cost_center: e.target.value })}
+              style={{
+                padding: "8px",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "1rem"
+              }}
+            />
+          </div>
+
           <div className="flex-row gap-sm">
             <input
               type="checkbox"
@@ -174,6 +192,7 @@ export default function SetupView() {
                 <th style={{ padding: "8px" }}>ID</th>
                 <th style={{ padding: "8px" }}>Name</th>
                 <th style={{ padding: "8px" }}>Ward</th>
+                <th style={{ padding: "8px" }}>Cost Center</th>
                 <th style={{ padding: "8px" }}>Status</th>
                 <th style={{ padding: "8px", textAlign: "right" }}>Actions</th>
               </tr>
@@ -184,6 +203,7 @@ export default function SetupView() {
                   <td style={{ padding: "8px", fontWeight: 600 }}>{h.house_id}</td>
                   <td style={{ padding: "8px" }}>{h.name || "-"}</td>
                   <td style={{ padding: "8px" }}>{h.ward || "-"}</td>
+                  <td style={{ padding: "8px" }}>{h.cost_center || "-"}</td>
                   <td style={{ padding: "8px" }}>
                     <span style={{
                       display: "inline-block",

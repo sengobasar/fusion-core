@@ -4,6 +4,14 @@ import { pairEvents } from "../utils/pairEvents";
 import { groupWindows } from "../utils/groupWindows";
 import { checkThresholds } from "../utils/checkThresholds";
 import { checkOpenWindows } from "../utils/checkOpenWindows";
+import type { Signal } from "../types/signal";
+import type { Action } from "../types/action";
+import { buildSignals } from "../utils/buildSignals";
+import { buildActions } from "../utils/buildActions";
+import {
+  buildImpactComparison,
+  IMPACT_DISCLAIMER,
+} from "../utils/impactFormula";
 import HouseCard from "../components/HouseCard";
 import { ISSUE_TO_ERP_LOSS } from "../erp/erpMapping";
 import { DAILY_AVAILABLE_MINUTES } from "../config/capacity";
@@ -31,6 +39,9 @@ export default function SupervisorView() {
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [houseStats, setHouseStats] = useState<Record<string, any>>({});
   const [houseCardsData, setHouseCardsData] = useState<any[]>([]);
+  const [signals, setSignals] = useState<Signal[]>([]);
+  const [actions, setActions] = useState<Action[]>([]);
+  const [impact, setImpact] = useState<any>(null);
   const [summary, setSummary] = useState({
     totalHouses: 0,
     activeInteractions: 0,
@@ -46,17 +57,8 @@ export default function SupervisorView() {
 
   async function loadData() {
     const db = await dbPromise;
-    const allEvents: EventRecord[] = await db.getAll("events");
+    const allEvents = await db.getAll("events");
     const allHouses = await db.getAll("houses");
-
-    const activeHouseIds = new Set(
-      allHouses.filter((h: any) => h.active).map((h: any) => h.house_id)
-    );
-
-    allEvents.sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-    setEvents(allEvents);
 
     const eventsByHouse: Record<string, EventRecord[]> = {};
     for (const e of allEvents) {
@@ -64,80 +66,75 @@ export default function SupervisorView() {
       eventsByHouse[e.house_id].push(e);
     }
 
-    const calculatedAlerts: Alert[] = [];
+    const allAlerts: Alert[] = [];
     const houseDowntime: Record<string, Record<string, number>> = {};
     const issueCounts: Record<string, number> = {};
-    let currentIntervenedCount = 0;
     let maxDuration = 0;
-
     const cards: any[] = [];
 
-    /* ===== PER HOUSE ===== */
     for (const house of allHouses) {
-      const houseId = house.house_id;
-      const houseEvents = eventsByHouse[houseId] || [];
-
+      const houseEvents = eventsByHouse[house.house_id] || [];
       const windows = pairEvents(houseEvents);
       const grouped = groupWindows(windows);
-      houseDowntime[houseId] = grouped;
+      houseDowntime[house.house_id] = grouped;
 
-      calculatedAlerts.push(...checkThresholds(houseId, windows));
-      const openAlert = checkOpenWindows(houseId, houseEvents)[0];
-      if (openAlert) calculatedAlerts.push(openAlert);
+      allAlerts.push(...checkThresholds(house.house_id, windows));
+      const openAlert = checkOpenWindows(house.house_id, houseEvents)[0];
+      if (openAlert) allAlerts.push(openAlert);
+
+      // Track Max Duration & Issue Counts for Summary
+      for (const w of windows) {
+        if (w.durationMinutes > maxDuration) maxDuration = w.durationMinutes;
+        issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
+      }
 
       if (
         houseEvents.length > 0 &&
         houseEvents[0].event_type !== "RESUME" &&
         house.active
       ) {
-        currentIntervenedCount++;
         const start = new Date(houseEvents[0].timestamp).getTime();
         const duration = Math.round((Date.now() - start) / 60000);
         if (duration > maxDuration) maxDuration = duration;
       }
 
-      for (const w of windows) {
-        issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
-        if (w.durationMinutes > maxDuration) maxDuration = w.durationMinutes;
-      }
-
-      /* ===== STEP 2: TIME MATH (DETERMINISTIC) ===== */
-
       const idleMinutes = Object.values(grouped).reduce(
-        (a: any, b: any) => a + b,
+        (a: any, b: any) => a + (b as number),
         0
       );
 
-      const availableMinutes = DAILY_AVAILABLE_MINUTES;
-      const workedMinutes = Math.max(0, availableMinutes - idleMinutes);
-      const utilization =
-        availableMinutes > 0 ? workedMinutes / availableMinutes : 0;
-      const mandays = workedMinutes / DAILY_AVAILABLE_MINUTES;
+      const workedMinutes = Math.max(
+        0,
+        DAILY_AVAILABLE_MINUTES - idleMinutes
+      );
 
-      let status: "RUNNING" | "INTERRUPTED" | "INACTIVE" = "RUNNING";
-      if (!house.active) status = "INACTIVE";
-      else if (openAlert) status = "INTERRUPTED";
-
-      const dominantIssueRaw =
+      const dominantIssue =
         Object.entries(grouped).sort((a: any, b: any) => b[1] - a[1])[0]?.[0];
 
-      /* ===== HOUSE CARD (ERP-READY) ===== */
-
       cards.push({
-        houseId: house.house_id,                 // cost_center_id
-        cluster: house.ward || house.cluster_id, // org_unit
-        active: house.active,
-        status,
+        houseId: house.cost_center || house.house_id, // PREFER CONFIGURABLE COST CENTER
+        cluster: house.ward || house.cluster_id,
         idleMinutes,
         workedMinutes,
-        utilization, // 0–1
-        mandays,     // capacity equivalent
-        dominantIssue: dominantIssueRaw
-          ? ISSUE_TO_ERP_LOSS[dominantIssueRaw] ?? dominantIssueRaw
-          : "None",
+        dominantIssue:
+          dominantIssue ? ISSUE_TO_ERP_LOSS[dominantIssue] : "None",
       });
     }
 
+    const builtSignals = buildSignals(allAlerts);
+    const builtActions = buildActions(builtSignals);
+
+    const totalDowntimeMinutes = Object.values(houseDowntime).reduce(
+      (sum: number, perHouse: any) =>
+        sum +
+        Object.values(perHouse as Record<string, number>).reduce(
+          (a: number, b: number) => a + b,
+          0
+        ),
+      0
+    );
+
+    // Calculate Top Issue
     let topIssue = "None";
     let topCount = 0;
     for (const [issue, count] of Object.entries(issueCounts)) {
@@ -147,22 +144,33 @@ export default function SupervisorView() {
       }
     }
 
-    setHouseStats(houseDowntime);
-    setHouseCardsData(cards);
     setSummary({
-      totalHouses: activeHouseIds.size,
-      activeInteractions: currentIntervenedCount,
+      totalHouses: allHouses.filter((h: any) => h.active).length,
+      activeInteractions: builtSignals.length,
       longestInterruption: maxDuration,
       mostFrequentIssue: ISSUE_TO_ERP_LOSS[topIssue] ?? topIssue,
     });
+
+    const impactComparison = buildImpactComparison(
+      totalDowntimeMinutes,
+      DAILY_AVAILABLE_MINUTES
+    );
+
+    setSignals(builtSignals);
+    setActions(builtActions);
+    setHouseStats(houseDowntime);
+    setHouseCardsData(cards);
+    setImpact(impactComparison);
+    setEvents(allEvents);
   }
 
   /* ================= RENDER ================= */
 
   return (
-    <div style={{ padding: "var(--space-lg)", maxWidth: "1200px", margin: "0 auto" }}>
+    <div style={{ padding: "24px", maxWidth: "1200px", margin: "0 auto" }}>
       <h2>Production Overview</h2>
 
+      {/* EXISTING METRICS — Layer 1 */}
       <section style={{ marginBottom: "var(--space-xl)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "16px" }}>
           <MetricCard label="Active Houses" value={summary.totalHouses} />
@@ -172,16 +180,79 @@ export default function SupervisorView() {
         </div>
       </section>
 
-      <section style={{ marginBottom: "var(--space-xl)" }}>
-        <h3>House Status</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--space-md)" }}>
-          {houseCardsData.map(h => (
-            <HouseCard key={h.houseId} {...h} />
-          ))}
-        </div>
-      </section>
+      {/* LAYER 5 — IMPACT */}
+      {impact && (
+        <section style={{ marginBottom: "32px" }}>
+          <h3>Operational Impact (Illustrative)</h3>
+          <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>
+            {IMPACT_DISCLAIMER}
+          </p>
 
-      <section style={{ marginBottom: "var(--space-xl)" }}>
+          <ul>
+            <li>
+              Before FloorSight: {impact.before.lostMinutes} min downtime (
+              {impact.before.mandaysLost.toFixed(2)} mandays)
+            </li>
+            <li>
+              After FloorSight: {impact.after.lostMinutes} min downtime (
+              {impact.after.mandaysLost.toFixed(2)} mandays)
+            </li>
+            <li>
+              Improvement: {impact.improvementMinutes} min (
+              {impact.improvementMandays.toFixed(2)} mandays)
+            </li>
+            <li>
+              Direction:{" "}
+              {impact.direction === "UP" ? "↑ Improvement" : "— No change"}
+            </li>
+          </ul>
+        </section>
+      )}
+
+      {/* LAYER 4 — ACTIONS */}
+      {actions.length > 0 && (
+        <section style={{ marginBottom: "32px" }}>
+          <h3>Suggested Actions (Advisory)</h3>
+          <p style={{ fontSize: "0.8rem", opacity: 0.7 }}>
+            These are advisory suggestions. No action is automated.
+          </p>
+          <ul>
+            {actions.map((a) => (
+              <li key={a.id}>
+                🔸 <strong>{a.title}</strong> ({a.priority}) —{" "}
+                {a.description}
+                <br />
+                <em>Reason:</em> {a.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* LAYER 3 — SIGNALS */}
+      {signals.length > 0 && (
+        <section style={{ marginBottom: "32px" }}>
+          <h3>Attention Signals</h3>
+          <ul>
+            {signals.map((s, i) => (
+              <li key={i}>
+                ⚠ {s.type} — {s.houseId} ({s.durationMinutes} min,{" "}
+                {s.severity})
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* EXISTING UI */}
+      <h3>House Status</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px" }}>
+        {houseCardsData.map((h) => (
+          <HouseCard key={h.houseId} {...h} />
+        ))}
+      </div>
+
+      <section style={{ marginBottom: "var(--space-xl)", marginTop: "32px" }}>
         <h3>Downtime Analysis (Today)</h3>
         <div className="card" style={{ padding: "var(--space-lg)" }}>
           {Object.keys(houseStats).length === 0 && <p style={{ fontStyle: "italic" }}>No downtime recorded today.</p>}

@@ -1,4 +1,4 @@
-import { Signal } from "../types/signal";
+import type { Signal } from "../types/signal";
 
 /*
   Input alert shape (from checkOpenWindows / checkThresholds)
