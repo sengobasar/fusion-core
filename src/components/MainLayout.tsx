@@ -11,6 +11,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     const navItems = [
         { label: "Worker", path: "/worker" },
         { label: "Supervisor", path: "/supervisor" },
+        { label: "Alerts", path: "/alerts" },
         { label: "Setup", path: "/setup" },
     ];
 

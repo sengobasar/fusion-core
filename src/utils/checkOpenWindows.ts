@@ -14,9 +14,13 @@ export function checkOpenWindows(
     houseId: string,
     events: EventRecord[]
 ): Alert[] {
+    if (events.length === 0) return [];
+
+    // Sort events oldest → newest
     const sorted = [...events].sort(
         (a, b) =>
-            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+            new Date(a.timestamp).getTime() -
+            new Date(b.timestamp).getTime()
     );
 
     let openEvent: EventRecord | null = null;
@@ -33,43 +37,43 @@ export function checkOpenWindows(
 
     const now = Date.now();
     const start = new Date(openEvent.timestamp).getTime();
-    const durationMinutes = Math.round((now - start) / 60000);
+    const durationMinutes = Math.floor((now - start) / 60000);
 
-    // 🔴 NO_MATERIAL — supply issue
+    // 🔴 NO MATERIAL — supply issue
     if (
         openEvent.event_type === "NO_MATERIAL" &&
-        durationMinutes >= 30
+        durationMinutes >= 1
     ) {
         return [{
             house_id: houseId,
             type: "NO_MATERIAL",
-            reason: "Material unavailable for > 30 minutes",
+            reason: "Material still unavailable (> 1 minute)",
             durationMinutes,
         }];
     }
 
-    // 🔴 THREAD_BREAK — maintenance / quality
+    // 🟠 THREAD BREAK — maintenance / quality
     if (
         openEvent.event_type === "THREAD_BREAK" &&
-        durationMinutes >= 20
+        durationMinutes >= 2
     ) {
         return [{
             house_id: houseId,
             type: "THREAD_BREAK",
-            reason: "Thread break unresolved for > 20 minutes",
+            reason: "Thread break unresolved (> 2 minutes)",
             durationMinutes,
         }];
     }
 
-    // 🔴 NO_ORDER — planning failure
+    // 🔵 NO ORDER — planning issue
     if (
         openEvent.event_type === "NO_ORDER" &&
-        durationMinutes >= 120
+        durationMinutes >= 2
     ) {
         return [{
             house_id: houseId,
             type: "NO_ORDER",
-            reason: "No order assigned for > 2 hours",
+            reason: "No order assigned (> 2 minutes)",
             durationMinutes,
         }];
     }

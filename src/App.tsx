@@ -4,6 +4,7 @@ import SupervisorView from "./views/SupervisorView";
 import HousesView from "./views/HousesView";
 import SetupView from "./views/SetupView";
 import MainLayout from "./components/MainLayout";
+import AlertsView from "./views/AlertsView";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/worker" />} />
         <Route path="/worker" element={<WorkerView />} />
         <Route path="/supervisor" element={<SupervisorView />} />
+        <Route path="/alerts" element={<AlertsView />} />
       </Routes>
     </MainLayout>
   );

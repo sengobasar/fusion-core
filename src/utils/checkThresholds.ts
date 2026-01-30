@@ -3,36 +3,46 @@ type TimeWindow = {
   durationMinutes: number;
 };
 
+type Alert = {
+  house_id: string;
+  type: string;
+  reason: string;
+  durationMinutes: number;
+};
+
 export function checkThresholds(
   houseId: string,
   windows: TimeWindow[]
-) {
-  const alerts = [];
+): Alert[] {
+  const alerts: Alert[] = [];
 
   for (const w of windows) {
-    if (w.type === "NO_MATERIAL" && w.durationMinutes > 30) {
+    // 🔴 NO MATERIAL — supply issue
+    if (w.type === "NO_MATERIAL" && w.durationMinutes >= 1) {
       alerts.push({
         house_id: houseId,
         type: w.type,
-        reason: "Material delay > 30 minutes",
+        reason: "Material unavailable for more than 1 minute",
         durationMinutes: w.durationMinutes,
       });
     }
 
-    if (w.type === "NO_ORDER" && w.durationMinutes > 120) {
+    // 🟠 THREAD BREAK — maintenance / quality
+    if (w.type === "THREAD_BREAK" && w.durationMinutes >= 2) {
       alerts.push({
         house_id: houseId,
         type: w.type,
-        reason: "No order > 2 hours",
+        reason: "Thread break lasted more than 2 minutes",
         durationMinutes: w.durationMinutes,
       });
     }
 
-    if (w.type === "THREAD_BREAK" && w.durationMinutes > 20) {
+    // 🔵 NO ORDER — planning issue
+    if (w.type === "NO_ORDER" && w.durationMinutes >= 2) {
       alerts.push({
         house_id: houseId,
         type: w.type,
-        reason: "Thread break > 20 minutes",
+        reason: "No order assigned for more than 2 minutes",
         durationMinutes: w.durationMinutes,
       });
     }
