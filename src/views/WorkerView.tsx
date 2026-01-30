@@ -54,7 +54,7 @@ export default function WorkerView() {
       event_id: crypto.randomUUID(),
       house_id: houseId,
       order_id: "ORD-001",
-      event_type: eventType, // INTERNAL KEY ONLY
+      event_type: eventType,
       timestamp: new Date().toISOString(),
       source: "PWA",
     });
@@ -67,7 +67,16 @@ export default function WorkerView() {
     <select
       value={lang}
       onChange={(e) => setLang(e.target.value as Language)}
-      style={{ padding: "8px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border)", marginLeft: "auto" }}
+      style={{
+        padding: "10px 14px",
+        borderRadius: "6px",
+        border: "1px solid #cbd5e1",
+        fontSize: "0.875rem",
+        backgroundColor: "white",
+        color: "#475569",
+        cursor: "pointer",
+        fontWeight: 500
+      }}
     >
       {(Object.keys(LANG_LABELS) as Language[]).map((l) => (
         <option key={l} value={l}>{LANG_LABELS[l]}</option>
@@ -78,26 +87,61 @@ export default function WorkerView() {
   // 1. SELECT HOUSE SCREEN
   if (!houseId) {
     return (
-      <div style={{ padding: "var(--space-lg)", maxWidth: "480px", margin: "0 auto", textAlign: "center" }}>
-        <div className="flex-row" style={{ justifyContent: "flex-end", marginBottom: "var(--space-md)" }}>
+      <div style={{
+        padding: "24px",
+        maxWidth: "500px",
+        margin: "0 auto",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        backgroundColor: "#f1f5f9"
+      }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "48px"
+        }}>
+          <h2 style={{
+            margin: 0,
+            fontSize: "1.5rem",
+            fontWeight: 700,
+            color: "#0f172a"
+          }}>
+            {t("SELECT_HOUSE")}
+          </h2>
           <LanguageSelector />
         </div>
 
-        <h2 style={{ marginBottom: "var(--space-md)" }}>{t("SELECT_HOUSE")}</h2>
-        <div className="flex-col gap-md">
-          {activeHouses.length === 0 && <p>{t("NO_HOUSES_FOUND")}</p>}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px"
+        }}>
+          {activeHouses.length === 0 && (
+            <p style={{
+              textAlign: "center",
+              color: "#64748b",
+              fontSize: "1.1rem",
+              marginTop: "60px"
+            }}>
+              {t("NO_HOUSES_FOUND")}
+            </p>
+          )}
           {activeHouses.map(id => (
             <button
               key={id}
               onClick={() => handleSelectHouse(id)}
               style={{
-                padding: "20px",
-                fontSize: "1.25rem",
-                fontWeight: "bold",
-                backgroundColor: "white",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.05)"
+                padding: "28px",
+                fontSize: "1.75rem",
+                fontWeight: 700,
+                backgroundColor: "#0f172a",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                letterSpacing: "2px"
               }}
             >
               {id}
@@ -111,95 +155,181 @@ export default function WorkerView() {
   // 2. OPERATOR INTERFACE
   const isProduction = !lastEvent || lastEvent === "RESUME";
   const currentIssue = !isProduction ? EVENT_TYPES.find(e => e.id === lastEvent) : null;
-  // Fallback for issue label if not found in list (e.g. legacy data)
   const issueLabel = currentIssue ? t(currentIssue.labelKey as any) : lastEvent;
 
   return (
-    <div style={{ padding: "var(--space-md)", height: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{
+      minHeight: "100vh",
+      backgroundColor: "#0f172a",
+      padding: "20px",
+      display: "flex",
+      flexDirection: "column"
+    }}>
 
-      {/* HEADER WITH LANG SWITCHER */}
-      <div className="flex-row" style={{ marginBottom: "var(--space-md)", justifyContent: "space-between" }}>
-        <div style={{ fontWeight: 600 }}>{t("APP_TITLE")}</div>
+      {/* HEADER */}
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "24px",
+        paddingBottom: "16px",
+        borderBottom: "1px solid #334155"
+      }}>
+        <div>
+          <div style={{
+            fontSize: "0.75rem",
+            color: "#94a3b8",
+            textTransform: "uppercase",
+            letterSpacing: "1px",
+            marginBottom: "2px"
+          }}>
+            {t("APP_TITLE")}
+          </div>
+          <div style={{
+            fontSize: "1.25rem",
+            fontWeight: 700,
+            color: "white",
+            letterSpacing: "1px"
+          }}>
+            {houseId}
+          </div>
+        </div>
         <LanguageSelector />
       </div>
 
-      {/* STATUS HEADER */}
-      <div
-        className="card"
-        style={{
-          marginBottom: "var(--space-lg)",
-          textAlign: "center",
-          backgroundColor: isProduction ? "#f0fdf4" : "#fef2f2",
-          borderColor: isProduction ? "#bbf7d0" : "#fecaca",
-          padding: "var(--space-lg)"
-        }}
-      >
-        <div style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "4px" }}>
-          {t("CONNECTED_TO")} {houseId}
+      {/* MAIN STATUS CARD */}
+      <div style={{
+        backgroundColor: isProduction ? "#166534" : "#991b1b",
+        borderRadius: "12px",
+        padding: "48px 32px",
+        marginBottom: "32px",
+        textAlign: "center",
+        border: `4px solid ${isProduction ? "#22c55e" : "#ef4444"}`
+      }}>
+        <div style={{
+          fontSize: "0.9rem",
+          color: isProduction ? "#bbf7d0" : "#fecaca",
+          textTransform: "uppercase",
+          letterSpacing: "2px",
+          fontWeight: 600,
+          marginBottom: "12px"
+        }}>
+          {isProduction ? "● RUNNING" : "● STOPPED"}
         </div>
         <div style={{
-          fontSize: "1.5rem",
-          fontWeight: "bold",
-          color: isProduction ? "#166534" : "#991b1b"
+          fontSize: "2.5rem",
+          fontWeight: 700,
+          color: "white",
+          lineHeight: 1.2,
+          letterSpacing: "1px"
         }}>
-          {isProduction ? t("STATUS_RUNNING") : `${t("STATUS_ISSUE")}: ${issueLabel}`}
+          {isProduction ? t("STATUS_RUNNING") : issueLabel}
         </div>
       </div>
 
-      {/* ACTIONS */}
-      <div className="flex-col gap-md" style={{ flex: 1 }}>
+      {/* ACTION BUTTONS */}
+      <div style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px"
+      }}>
         {EVENT_TYPES.map((type) => {
           const isResume = type.id === "RESUME";
           if (isProduction && isResume) return null;
           if (!isProduction && !isResume) return null;
 
+          // PRIMARY ACTION (Resume)
+          if (isResume) {
+            return (
+              <button
+                key={type.id}
+                onClick={() => logEvent(type.id)}
+                style={{
+                  padding: "40px",
+                  backgroundColor: "#22c55e",
+                  color: "#052e16",
+                  border: "none",
+                  borderRadius: "12px",
+                  fontSize: "2rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textTransform: "uppercase",
+                  letterSpacing: "2px",
+                  boxShadow: "0 8px 20px rgba(34, 197, 94, 0.4)"
+                }}
+              >
+                {t(type.labelKey as any)}
+              </button>
+            );
+          }
+
+          // SECONDARY ACTIONS (Issues)
           return (
             <button
               key={type.id}
               onClick={() => logEvent(type.id)}
               style={{
-                flex: 1,
-                maxHeight: "120px",
-                // Use light background for Resume to be distinct? Or keep consistent?
-                // Prompt said "Buttons must be large, high-contrast".
-                background: type.id === "RESUME" ? "#22c55e" : "white",
-                color: type.id === "RESUME" ? "white" : type.color,
+                padding: "24px",
+                backgroundColor: "#1e293b",
+                color: type.color,
                 border: `2px solid ${type.color}`,
-
-                borderRadius: "var(--radius-lg)",
-                fontSize: "1.5rem",
-                fontWeight: "700",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 4px 6px rgba(0,0,0,0.05)"
+                borderRadius: "8px",
+                fontSize: "1.25rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                textTransform: "uppercase",
+                letterSpacing: "1px"
               }}
             >
               {t(type.labelKey as any)}
             </button>
           );
         })}
-
-        {!isProduction && (
-          <div style={{ marginTop: "auto", textAlign: "center" }}>
-            <p className="text-sm">
-              <span
-                style={{ textDecoration: "underline", cursor: "pointer" }}
-                onClick={() => setLastEvent(null)}
-              >
-                {t("MISTAKE_CANCEL")}
-              </span>
-            </p>
-          </div>
-        )}
       </div>
 
-      <div style={{ marginTop: "var(--space-lg)", textAlign: "center" }}>
+      {/* MISTAKE CANCEL */}
+      {!isProduction && (
+        <div style={{
+          marginTop: "24px",
+          textAlign: "center"
+        }}>
+          <button
+            onClick={() => setLastEvent(null)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#64748b",
+              fontSize: "0.875rem",
+              cursor: "pointer",
+              textDecoration: "underline",
+              padding: "12px"
+            }}
+          >
+            {t("MISTAKE_CANCEL")}
+          </button>
+        </div>
+      )}
+
+      {/* UNLINK */}
+      <div style={{
+        marginTop: "24px",
+        paddingTop: "20px",
+        borderTop: "1px solid #334155",
+        textAlign: "center"
+      }}>
         <button
           onClick={() => { localStorage.removeItem("house_id"); setHouseId(null); }}
-          style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "0.875rem" }}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#475569",
+            fontSize: "0.875rem",
+            cursor: "pointer",
+            padding: "8px"
+          }}
         >
-          {t("UNLINK")}
+          ← {t("UNLINK")}
         </button>
       </div>
     </div>
