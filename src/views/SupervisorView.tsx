@@ -4,21 +4,24 @@ import { pairEvents } from "../utils/pairEvents";
 import { groupWindows } from "../utils/groupWindows";
 import { checkThresholds } from "../utils/checkThresholds";
 import { checkOpenWindows } from "../utils/checkOpenWindows";
+
 import type { Signal } from "../types/signal";
 import type { Action } from "../types/action";
+
 import { buildSignals } from "../utils/buildSignals";
 import { buildActions } from "../utils/buildActions";
+
 import {
   buildImpactComparison,
   IMPACT_DISCLAIMER,
 } from "../utils/impactFormula";
-import {
-  buildPredictiveSignals,
-} from "../utils/predictiveSignals";
+
+import { buildPredictiveSignals } from "../utils/predictiveSignals";
 import {
   buildPredictiveInsights,
   type PredictiveInsight,
 } from "../utils/predictiveInsights";
+
 import HouseCard from "../components/HouseCard";
 import { ISSUE_TO_ERP_LOSS } from "../erp/erpMapping";
 import { DAILY_AVAILABLE_MINUTES } from "../config/capacity";
@@ -48,9 +51,9 @@ export default function SupervisorView() {
   const [houseCardsData, setHouseCardsData] = useState<any[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [actions, setActions] = useState<Action[]>([]);
-
   const [impact, setImpact] = useState<any>(null);
   const [predictiveInsights, setPredictiveInsights] = useState<PredictiveInsight[]>([]);
+
   const [summary, setSummary] = useState({
     totalHouses: 0,
     activeInteractions: 0,
@@ -69,9 +72,9 @@ export default function SupervisorView() {
     const allEvents: EventRecord[] = await db.getAll("events");
     const allHouses = await db.getAll("houses");
 
-    /* -------- Group events by house -------- */
-    // SORT EVENTS DESCENDING (Newest First) to ensure logic works
-    allEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    allEvents.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
 
     const eventsByHouse: Record<string, EventRecord[]> = {};
     for (const e of allEvents) {
@@ -86,12 +89,14 @@ export default function SupervisorView() {
     let currentlyInterruptedCount = 0;
     const cards: any[] = [];
 
-    /* -------- PER HOUSE -------- */
+    /* ---------- PER HOUSE ---------- */
+
     for (const house of allHouses) {
       const houseEvents = eventsByHouse[house.house_id] || [];
 
-      // Determine Status
-      const isInterrupted = houseEvents.length > 0 && houseEvents[0].event_type !== "RESUME";
+      const isInterrupted =
+        houseEvents.length > 0 && houseEvents[0].event_type !== "RESUME";
+
       let status: "RUNNING" | "INTERRUPTED" | "INACTIVE" = "RUNNING";
       if (!house.active) status = "INACTIVE";
       else if (isInterrupted) status = "INTERRUPTED";
@@ -104,25 +109,14 @@ export default function SupervisorView() {
       const grouped = groupWindows(windows);
       houseDowntime[house.house_id] = grouped;
 
-      // Layer 3 inputs
       allAlerts.push(...checkThresholds(house.house_id, windows));
-      const openAlert = checkOpenWindows(house.house_id, houseEvents)[0];
-      if (openAlert) {
-        allAlerts.push(openAlert);
-      }
 
-      // Summary tracking
+      const openAlert = checkOpenWindows(house.house_id, houseEvents)[0];
+      if (openAlert) allAlerts.push(openAlert);
+
       for (const w of windows) {
         issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
-        if (w.durationMinutes > maxDuration) {
-          maxDuration = w.durationMinutes;
-        }
-      }
-
-      const start = (houseEvents.length > 0 && isInterrupted) ? new Date(houseEvents[0].timestamp).getTime() : 0;
-      if (start > 0) {
-        const duration = Math.round((Date.now() - start) / 60000);
-        if (duration > maxDuration) maxDuration = duration;
+        maxDuration = Math.max(maxDuration, w.durationMinutes);
       }
 
       const idleMinutes = Object.values(grouped).reduce(
@@ -141,8 +135,8 @@ export default function SupervisorView() {
       cards.push({
         houseId: house.cost_center || house.house_id,
         cluster: house.ward || house.cluster_id,
-        active: house.active, // Pass correct Active state
-        status,               // Pass correct Status
+        active: house.active,
+        status,
         idleMinutes,
         workedMinutes,
         dominantIssue:
@@ -150,20 +144,17 @@ export default function SupervisorView() {
       });
     }
 
-    /* -------- LAYER 3 -------- */
+    /* ---------- LAYER 3 ---------- */
     const builtSignals = buildSignals(allAlerts);
 
-    /* -------- LAYER 4 -------- */
+    /* ---------- LAYER 4 ---------- */
     const builtActions = buildActions(builtSignals);
 
-    /* -------- LAYER 5 -------- */
+    /* ---------- LAYER 5 ---------- */
     const totalDowntimeMinutes = Object.values(houseDowntime).reduce(
       (sum: number, perHouse: any) =>
         sum +
-        Object.values(perHouse as Record<string, number>).reduce(
-          (a: number, b: number) => a + b,
-          0
-        ),
+        (Object.values(perHouse) as number[]).reduce((a: number, b: number) => a + b, 0),
       0
     );
 
@@ -172,9 +163,7 @@ export default function SupervisorView() {
       DAILY_AVAILABLE_MINUTES
     );
 
-    /* -------- LAYER 6 — PREDICTIVE (Rule-based) -------- */
-
-    // Build issue count per house
+    /* ---------- LAYER 6 (PREDICTIVE) ---------- */
     const issueCountsByHouse: Record<string, Record<string, number>> = {};
 
     for (const [houseId, grouped] of Object.entries(houseDowntime)) {
@@ -190,11 +179,10 @@ export default function SupervisorView() {
     const predictiveSignals = buildPredictiveSignals(issueCountsByHouse);
     const insights = buildPredictiveInsights(predictiveSignals);
 
-    setPredictiveInsights(insights);
-
-    /* -------- Summary -------- */
+    /* ---------- SUMMARY ---------- */
     let topIssue = "None";
     let topCount = 0;
+
     for (const [issue, count] of Object.entries(issueCounts)) {
       if (count > topCount) {
         topCount = count;
@@ -204,7 +192,7 @@ export default function SupervisorView() {
 
     setSummary({
       totalHouses: allHouses.filter((h: any) => h.active).length,
-      activeInteractions: currentlyInterruptedCount, // ✅ FIXED
+      activeInteractions: currentlyInterruptedCount,
       longestInterruption: maxDuration,
       mostFrequentIssue: ISSUE_TO_ERP_LOSS[topIssue] ?? topIssue,
     });
@@ -214,6 +202,7 @@ export default function SupervisorView() {
     setHouseStats(houseDowntime);
     setHouseCardsData(cards);
     setImpact(impactComparison);
+    setPredictiveInsights(insights);
     setEvents(allEvents);
   }
 
@@ -223,13 +212,11 @@ export default function SupervisorView() {
     <div style={{ padding: "24px", maxWidth: "1200px", margin: "0 auto" }}>
       <h2>Production Overview</h2>
 
-      <section style={{ marginBottom: "32px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "16px" }}>
-          <MetricCard label="Active Houses" value={summary.totalHouses} />
-          <MetricCard label="Currently Interrupted" value={summary.activeInteractions} />
-          <MetricCard label="Longest Interruption" value={`${summary.longestInterruption} min`} />
-          <MetricCard label="Most Frequent Issue" value={summary.mostFrequentIssue} />
-        </div>
+      <section style={{ marginBottom: "24px" }}>
+        <MetricCard label="Active Houses" value={summary.totalHouses} />
+        <MetricCard label="Currently Interrupted" value={summary.activeInteractions} />
+        <MetricCard label="Longest Interruption" value={`${summary.longestInterruption} min`} />
+        <MetricCard label="Most Frequent Issue" value={summary.mostFrequentIssue} />
       </section>
 
       {impact && (
@@ -366,6 +353,9 @@ export default function SupervisorView() {
   );
 }
 
+/* ================= UI HELPERS ================= */
+
+
 function LegendColor({ color, label }: { color: string, label: string }) {
   return (
     <div className="flex-row gap-sm">
@@ -375,12 +365,10 @@ function LegendColor({ color, label }: { color: string, label: string }) {
   );
 }
 
-/* ================= UI HELPERS ================= */
-
 function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="card">
-      <div className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{label}</div>
+      <div className="text-sm">{label}</div>
       <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{value}</div>
     </div>
   );

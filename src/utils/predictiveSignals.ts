@@ -1,55 +1,60 @@
-// Layer 6 — Predictive Signals (Rule-based, Explainable)
-// ----------------------------------------------
-// NO ML training
-// NO automation
-// NO execution
-// Uses simple frequency + trend heuristics
-
-import type { SignalType } from "../types/signal";
+// src/utils/predictiveSignals.ts
 
 export type PredictiveSignal = {
     houseId: string;
-    type: SignalType;
-    likelihood: "LOW" | "MEDIUM" | "HIGH";
-    basis: string; // human-readable explanation
+    issue: "SUPPLY" | "QUALITY" | "PLANNING";
+    strength: "LOW" | "MEDIUM" | "HIGH";
+    evidence: string;
 };
 
 /*
-  Input shape: historical event counts per house
+  Input example:
+  {
+    "h-1": { NO_MATERIAL: 4, THREAD_BREAK: 2 },
+    "h-2": { NO_ORDER: 3 }
+  }
 */
-type IssueCountMap = Record<string, Record<string, number>>;
 
-/*
-  Simple heuristic:
-  - If same issue repeats frequently → higher likelihood
-*/
 export function buildPredictiveSignals(
-    issueCountsByHouse: IssueCountMap
+    issueCountsByHouse: Record<string, Record<string, number>>
 ): PredictiveSignal[] {
-    const predictions: PredictiveSignal[] = [];
+    const signals: PredictiveSignal[] = [];
 
     for (const [houseId, issues] of Object.entries(issueCountsByHouse)) {
-        for (const [issue, count] of Object.entries(issues)) {
-            let likelihood: PredictiveSignal["likelihood"] = "LOW";
+        const noMaterial = issues["NO_MATERIAL"] || 0;
+        const threadBreak = issues["THREAD_BREAK"] || 0;
+        const noOrder = issues["NO_ORDER"] || 0;
 
-            if (count >= 5) likelihood = "HIGH";
-            else if (count >= 3) likelihood = "MEDIUM";
-
-            if (likelihood === "LOW") continue;
-
-            let type: SignalType = "PLANNING_RISK";
-            if (issue === "NO_MATERIAL") type = "SUPPLY_RISK";
-            if (issue === "THREAD_BREAK") type = "QUALITY_RISK";
-            if (issue === "NO_ORDER") type = "PLANNING_RISK";
-
-            predictions.push({
+        // ---- SUPPLY RISK ----
+        if (noMaterial >= 2) {
+            signals.push({
                 houseId,
-                type,
-                likelihood,
-                basis: `${issue} occurred ${count} times recently`,
+                issue: "SUPPLY",
+                strength: noMaterial >= 4 ? "HIGH" : "MEDIUM",
+                evidence: `NO_MATERIAL occurred ${noMaterial} times recently`,
+            });
+        }
+
+        // ---- QUALITY RISK ----
+        if (threadBreak >= 2) {
+            signals.push({
+                houseId,
+                issue: "QUALITY",
+                strength: threadBreak >= 4 ? "HIGH" : "MEDIUM",
+                evidence: `THREAD_BREAK occurred ${threadBreak} times recently`,
+            });
+        }
+
+        // ---- PLANNING RISK ----
+        if (noOrder >= 2) {
+            signals.push({
+                houseId,
+                issue: "PLANNING",
+                strength: noOrder >= 4 ? "HIGH" : "MEDIUM",
+                evidence: `NO_ORDER occurred ${noOrder} times recently`,
             });
         }
     }
 
-    return predictions;
+    return signals;
 }

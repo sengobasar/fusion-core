@@ -1,7 +1,4 @@
-// Layer 6 — Predictive Insights (Human-readable)
-// ----------------------------------------------
-// Converts predictive signals into explainable text
-// No scoring, no automation
+// src/utils/predictiveInsights.ts
 
 import type { PredictiveSignal } from "./predictiveSignals";
 
@@ -11,28 +8,39 @@ export type PredictiveInsight = {
     confidence: "LOW" | "MEDIUM" | "HIGH";
 };
 
+/*
+  This layer converts predictive signals into
+  human-readable early warnings.
+  Still rule-based, explainable, non-automated.
+*/
+
 export function buildPredictiveInsights(
     signals: PredictiveSignal[]
 ): PredictiveInsight[] {
-    return signals.map((s) => {
+    return signals.map((signal) => {
         let message = "";
 
-        if (s.type === "SUPPLY_RISK") {
-            message = "Material delay likely in upcoming shift";
-        }
+        switch (signal.issue) {
+            case "SUPPLY":
+                message =
+                    "Supply interruptions may repeat in the next shift unless material availability is stabilized.";
+                break;
 
-        if (s.type === "QUALITY_RISK") {
-            message = "Thread break risk likely to repeat";
-        }
+            case "QUALITY":
+                message =
+                    "Quality-related stoppages may increase if loom setup or yarn quality is not reviewed.";
+                break;
 
-        if (s.type === "PLANNING_RISK") {
-            message = "Order planning gaps may continue";
+            case "PLANNING":
+                message =
+                    "Idle time due to order gaps may continue unless production planning is adjusted.";
+                break;
         }
 
         return {
-            houseId: s.houseId,
-            message: `${message} (${s.basis})`,
-            confidence: s.likelihood,
+            houseId: signal.houseId,
+            message,
+            confidence: signal.strength,
         };
     });
 }
