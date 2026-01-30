@@ -12,12 +12,21 @@ export default function MainLayout({ children }: MainLayoutProps) {
         { label: "Worker", path: "/worker" },
         { label: "Supervisor", path: "/supervisor" },
         { label: "Alerts", path: "/alerts" },
+        { label: "Advisory", path: "/advisory" }, // ✅ Layer 4
+        { label: "Impact", path: "/impact" },     // ✅ Layer 5
         { label: "Setup", path: "/setup" },
     ];
 
     return (
-        <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
-            {/* Sidebar - Hidden on mobile if needed, but keeping simple for now */}
+        <div
+            style={{
+                display: "flex",
+                height: "100vh",
+                width: "100vw",
+                overflow: "hidden",
+            }}
+        >
+            {/* Sidebar */}
             <aside
                 style={{
                     width: "240px",
@@ -28,11 +37,29 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     flexShrink: 0,
                 }}
             >
-                <div style={{ padding: "var(--space-md) var(--space-lg)", borderBottom: "1px solid #334155" }}>
-                    <h1 style={{ fontSize: "1.25rem", margin: 0, color: "white", fontWeight: 700 }}>FloorSight</h1>
-                    <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>MES Platform</span>
+                {/* Logo */}
+                <div
+                    style={{
+                        padding: "var(--space-md) var(--space-lg)",
+                        borderBottom: "1px solid #334155",
+                    }}
+                >
+                    <h1
+                        style={{
+                            fontSize: "1.25rem",
+                            margin: 0,
+                            color: "white",
+                            fontWeight: 700,
+                        }}
+                    >
+                        FloorSight
+                    </h1>
+                    <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+                        MES Platform
+                    </span>
                 </div>
 
+                {/* Navigation */}
                 <nav style={{ flex: 1, padding: "var(--space-md)" }}>
                     {navItems.map((item) => {
                         const isActive = location.pathname.startsWith(item.path);
@@ -47,7 +74,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                     borderRadius: "var(--radius-sm)",
                                     textDecoration: "none",
                                     color: isActive ? "#fff" : "#94a3b8",
-                                    backgroundColor: isActive ? "rgba(255,255,255,0.1)" : "transparent",
+                                    backgroundColor: isActive
+                                        ? "rgba(255,255,255,0.1)"
+                                        : "transparent",
                                     fontWeight: isActive ? 600 : 400,
                                 }}
                             >
@@ -57,12 +86,19 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     })}
                 </nav>
 
-                <div style={{ padding: "var(--space-md)", fontSize: "0.75rem", color: "#64748b" }}>
+                {/* Footer */}
+                <div
+                    style={{
+                        padding: "var(--space-md)",
+                        fontSize: "0.75rem",
+                        color: "#64748b",
+                    }}
+                >
                     v1.0.0
                 </div>
             </aside>
 
-            {/* Main Content Area */}
+            {/* Main Content */}
             <main
                 style={{
                     flex: 1,

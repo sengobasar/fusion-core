@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { dbPromise } from "../db/db";
 import { pairEvents } from "../utils/pairEvents";
 import { groupWindows } from "../utils/groupWindows";
@@ -22,9 +23,12 @@ type EventRecord = {
 /* ================= VIEW ================= */
 
 export default function SupervisorView() {
+  const navigate = useNavigate();
+
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [houseStats, setHouseStats] = useState<Record<string, any>>({});
   const [houseCardsData, setHouseCardsData] = useState<any[]>([]);
+  const [openAlertCount, setOpenAlertCount] = useState(0);
 
   const [summary, setSummary] = useState({
     totalHouses: 0,
@@ -76,7 +80,7 @@ export default function SupervisorView() {
       const grouped = groupWindows(windows);
       houseDowntime[house.house_id] = grouped;
 
-      /* ===== ADDITION: LAYER 3 ALERT GENERATION ===== */
+      /* ===== LAYER 3 ALERT GENERATION ===== */
 
       const thresholdAlerts = checkThresholds(house.house_id, windows);
       const openAlerts = checkOpenWindows(house.house_id, houseEvents);
@@ -99,7 +103,7 @@ export default function SupervisorView() {
         });
       }
 
-      /* ===== END ADDITION ===== */
+      /* ===== END ALERT GENERATION ===== */
 
       for (const w of windows) {
         issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
@@ -131,6 +135,11 @@ export default function SupervisorView() {
       });
     }
 
+    /* ===== OPEN ALERT COUNT FOR SUPERVISOR ===== */
+    const allAlerts = await db.getAll("alerts");
+    const openAlerts = allAlerts.filter(a => a.status === "OPEN");
+    setOpenAlertCount(openAlerts.length);
+
     let topIssue = "None";
     let topCount = 0;
     for (const [issue, count] of Object.entries(issueCounts)) {
@@ -158,6 +167,34 @@ export default function SupervisorView() {
     <div style={{ padding: "24px", maxWidth: "1200px", margin: "0 auto" }}>
       <h2>Production Overview</h2>
 
+      {/* ===== ALERT BANNER ===== */}
+      {openAlertCount > 0 && (
+        <div
+          onClick={() => navigate("/alerts")}
+          style={{
+            marginBottom: "24px",
+            padding: "16px",
+            borderRadius: "8px",
+            background: "#fee2e2",
+            border: "1px solid #ef4444",
+            color: "#991b1b",
+            cursor: "pointer",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontWeight: 600,
+          }}
+        >
+          <span>
+            ⚠ {openAlertCount} Open Alert{openAlertCount > 1 ? "s" : ""} require attention
+          </span>
+          <span style={{ fontSize: "0.9rem", opacity: 0.8 }}>
+            View Alerts →
+          </span>
+        </div>
+      )}
+
+      {/* ===== SUMMARY ===== */}
       <section
         style={{
           display: "grid",

@@ -60,13 +60,44 @@ export default function AlertsView() {
         loadAlerts();
     }
 
+    /* ================= DERIVED SUMMARY ================= */
+
+    const openAlerts = alerts.filter(a => a.status === "OPEN");
+    const criticalCount = openAlerts.filter(a => a.severity === "CRITICAL").length;
+    const warningCount = openAlerts.filter(a => a.severity === "WARNING").length;
+
+    const issueCounts: Record<string, number> = {};
+    for (const a of openAlerts) {
+        issueCounts[a.issue] = (issueCounts[a.issue] || 0) + 1;
+    }
+
+    const topIssue =
+        Object.entries(issueCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None";
+
     /* ================= RENDER ================= */
 
     return (
         <div style={{ padding: "24px", maxWidth: "1000px", margin: "0 auto" }}>
             <h2>Alerts</h2>
 
-            {/* FILTER */}
+            {/* ===== SUMMARY STRIP ===== */}
+            <div
+                className="card"
+                style={{
+                    padding: "16px",
+                    marginBottom: "20px",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, 1fr)",
+                    gap: "12px",
+                }}
+            >
+                <SummaryMetric label="Open Alerts" value={openAlerts.length} />
+                <SummaryMetric label="Critical" value={criticalCount} color="#ef4444" />
+                <SummaryMetric label="Warnings" value={warningCount} color="#f59e0b" />
+                <SummaryMetric label="Top Issue" value={topIssue} />
+            </div>
+
+            {/* ===== FILTER ===== */}
             <div style={{ marginBottom: "16px" }}>
                 <button
                     onClick={() => setFilter("OPEN")}
@@ -87,7 +118,7 @@ export default function AlertsView() {
                 <p style={{ opacity: 0.6 }}>No alerts to show.</p>
             )}
 
-            {/* ALERT LIST */}
+            {/* ===== ALERT LIST ===== */}
             <div style={{ display: "grid", gap: "12px" }}>
                 {alerts.map(a => (
                     <div
@@ -151,6 +182,33 @@ export default function AlertsView() {
                         )}
                     </div>
                 ))}
+            </div>
+        </div>
+    );
+}
+
+/* ================= UI HELPERS ================= */
+
+function SummaryMetric({
+    label,
+    value,
+    color,
+}: {
+    label: string;
+    value: string | number;
+    color?: string;
+}) {
+    return (
+        <div>
+            <div style={{ fontSize: "0.7rem", opacity: 0.7 }}>{label}</div>
+            <div
+                style={{
+                    fontSize: "1.25rem",
+                    fontWeight: 700,
+                    color: color ?? "#0f172a",
+                }}
+            >
+                {value}
             </div>
         </div>
     );

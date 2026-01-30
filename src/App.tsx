@@ -5,6 +5,8 @@ import HousesView from "./views/HousesView";
 import SetupView from "./views/SetupView";
 import MainLayout from "./components/MainLayout";
 import AlertsView from "./views/AlertsView";
+import ImpactView from "./views/ImpactView";
+import AdvisoryView from "./views/AdvisoryView";
 
 export default function App() {
   return (
@@ -16,6 +18,10 @@ export default function App() {
         <Route path="/worker" element={<WorkerView />} />
         <Route path="/supervisor" element={<SupervisorView />} />
         <Route path="/alerts" element={<AlertsView />} />
+        <Route path="/impact" element={<ImpactView />} />
+        <Route path="/advisory" element={<AdvisoryView />} />
+
+
       </Routes>
     </MainLayout>
   );

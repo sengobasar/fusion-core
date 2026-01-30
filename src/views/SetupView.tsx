@@ -58,7 +58,8 @@ export default function SetupView() {
     const db = await dbPromise;
     await db.clear("events");
     await db.clear("houses");
-    // await db.clear("orders"); // If used
+    await db.clear("alerts"); // NEW: Clear alerts
+    if (db.objectStoreNames.contains("orders")) await db.clear("orders");
     localStorage.clear();
     location.reload();
   }
