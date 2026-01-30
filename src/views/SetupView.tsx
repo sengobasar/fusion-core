@@ -53,6 +53,16 @@ export default function SetupView() {
     setIsEditing(true);
   }
 
+  async function factoryReset() {
+    if (!confirm("⚠️ FACTORY RESET: This will wipe ALL events, houses, and config. Are you sure?")) return;
+    const db = await dbPromise;
+    await db.clear("events");
+    await db.clear("houses");
+    // await db.clear("orders"); // If used
+    localStorage.clear();
+    location.reload();
+  }
+
   return (
     <div style={{ padding: "var(--space-lg)", maxWidth: "800px", margin: "0 auto" }}>
       <div className="flex-row" style={{ justifyContent: "space-between", marginBottom: "var(--space-lg)" }}>
@@ -249,6 +259,25 @@ export default function SetupView() {
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* DANGER ZONE */}
+      <div style={{ marginTop: "48px", borderTop: "1px solid #ef4444", paddingTop: "24px" }}>
+        <h3 style={{ color: "#ef4444", fontSize: "1rem", marginBottom: "8px" }}>Danger Zone</h3>
+        <button
+          onClick={factoryReset}
+          style={{
+            backgroundColor: "#fee2e2",
+            color: "#991b1b",
+            border: "1px solid #f87171",
+            padding: "8px 16px",
+            borderRadius: "var(--radius-sm)",
+            fontWeight: 600,
+            cursor: "pointer"
+          }}
+        >
+          Factory Reset (Clear Data)
+        </button>
       </div>
     </div>
   );

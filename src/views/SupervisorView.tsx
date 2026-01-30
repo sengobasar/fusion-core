@@ -57,8 +57,12 @@ export default function SupervisorView() {
 
   async function loadData() {
     const db = await dbPromise;
-    const allEvents = await db.getAll("events");
+    const allEvents: EventRecord[] = await db.getAll("events");
     const allHouses = await db.getAll("houses");
+
+    /* -------- Group events by house -------- */
+    // SORT EVENTS DESCENDING (Newest First) to ensure logic works
+    allEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     const eventsByHouse: Record<string, EventRecord[]> = {};
     for (const e of allEvents) {
@@ -70,36 +74,50 @@ export default function SupervisorView() {
     const houseDowntime: Record<string, Record<string, number>> = {};
     const issueCounts: Record<string, number> = {};
     let maxDuration = 0;
+    let currentlyInterruptedCount = 0;
     const cards: any[] = [];
 
+    /* -------- PER HOUSE -------- */
     for (const house of allHouses) {
       const houseEvents = eventsByHouse[house.house_id] || [];
+
+      // Determine Status
+      const isInterrupted = houseEvents.length > 0 && houseEvents[0].event_type !== "RESUME";
+      let status: "RUNNING" | "INTERRUPTED" | "INACTIVE" = "RUNNING";
+      if (!house.active) status = "INACTIVE";
+      else if (isInterrupted) status = "INTERRUPTED";
+
+      if (house.active && isInterrupted) {
+        currentlyInterruptedCount++;
+      }
+
       const windows = pairEvents(houseEvents);
       const grouped = groupWindows(windows);
       houseDowntime[house.house_id] = grouped;
 
+      // Layer 3 inputs
       allAlerts.push(...checkThresholds(house.house_id, windows));
       const openAlert = checkOpenWindows(house.house_id, houseEvents)[0];
-      if (openAlert) allAlerts.push(openAlert);
-
-      // Track Max Duration & Issue Counts for Summary
-      for (const w of windows) {
-        if (w.durationMinutes > maxDuration) maxDuration = w.durationMinutes;
-        issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
+      if (openAlert) {
+        allAlerts.push(openAlert);
       }
 
-      if (
-        houseEvents.length > 0 &&
-        houseEvents[0].event_type !== "RESUME" &&
-        house.active
-      ) {
-        const start = new Date(houseEvents[0].timestamp).getTime();
+      // Summary tracking
+      for (const w of windows) {
+        issueCounts[w.type] = (issueCounts[w.type] || 0) + 1;
+        if (w.durationMinutes > maxDuration) {
+          maxDuration = w.durationMinutes;
+        }
+      }
+
+      const start = (houseEvents.length > 0 && isInterrupted) ? new Date(houseEvents[0].timestamp).getTime() : 0;
+      if (start > 0) {
         const duration = Math.round((Date.now() - start) / 60000);
         if (duration > maxDuration) maxDuration = duration;
       }
 
       const idleMinutes = Object.values(grouped).reduce(
-        (a: any, b: any) => a + (b as number),
+        (a: number, b: number) => a + b,
         0
       );
 
@@ -112,8 +130,10 @@ export default function SupervisorView() {
         Object.entries(grouped).sort((a: any, b: any) => b[1] - a[1])[0]?.[0];
 
       cards.push({
-        houseId: house.cost_center || house.house_id, // PREFER CONFIGURABLE COST CENTER
+        houseId: house.cost_center || house.house_id,
         cluster: house.ward || house.cluster_id,
+        active: house.active, // Pass correct Active state
+        status,               // Pass correct Status
         idleMinutes,
         workedMinutes,
         dominantIssue:
@@ -121,9 +141,13 @@ export default function SupervisorView() {
       });
     }
 
+    /* -------- LAYER 3 -------- */
     const builtSignals = buildSignals(allAlerts);
+
+    /* -------- LAYER 4 -------- */
     const builtActions = buildActions(builtSignals);
 
+    /* -------- LAYER 5 -------- */
     const totalDowntimeMinutes = Object.values(houseDowntime).reduce(
       (sum: number, perHouse: any) =>
         sum +
@@ -134,7 +158,12 @@ export default function SupervisorView() {
       0
     );
 
-    // Calculate Top Issue
+    const impactComparison = buildImpactComparison(
+      totalDowntimeMinutes,
+      DAILY_AVAILABLE_MINUTES
+    );
+
+    /* -------- Summary -------- */
     let topIssue = "None";
     let topCount = 0;
     for (const [issue, count] of Object.entries(issueCounts)) {
@@ -146,15 +175,10 @@ export default function SupervisorView() {
 
     setSummary({
       totalHouses: allHouses.filter((h: any) => h.active).length,
-      activeInteractions: builtSignals.length,
+      activeInteractions: currentlyInterruptedCount, // ✅ FIXED
       longestInterruption: maxDuration,
       mostFrequentIssue: ISSUE_TO_ERP_LOSS[topIssue] ?? topIssue,
     });
-
-    const impactComparison = buildImpactComparison(
-      totalDowntimeMinutes,
-      DAILY_AVAILABLE_MINUTES
-    );
 
     setSignals(builtSignals);
     setActions(builtActions);
@@ -170,8 +194,7 @@ export default function SupervisorView() {
     <div style={{ padding: "24px", maxWidth: "1200px", margin: "0 auto" }}>
       <h2>Production Overview</h2>
 
-      {/* EXISTING METRICS — Layer 1 */}
-      <section style={{ marginBottom: "var(--space-xl)" }}>
+      <section style={{ marginBottom: "32px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "16px" }}>
           <MetricCard label="Active Houses" value={summary.totalHouses} />
           <MetricCard label="Currently Interrupted" value={summary.activeInteractions} />
@@ -180,36 +203,19 @@ export default function SupervisorView() {
         </div>
       </section>
 
-      {/* LAYER 5 — IMPACT */}
       {impact && (
         <section style={{ marginBottom: "32px" }}>
           <h3>Operational Impact (Illustrative)</h3>
-          <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>
-            {IMPACT_DISCLAIMER}
-          </p>
-
+          <p style={{ fontSize: "0.85rem", opacity: 0.7 }}>{IMPACT_DISCLAIMER}</p>
           <ul>
-            <li>
-              Before FloorSight: {impact.before.lostMinutes} min downtime (
-              {impact.before.mandaysLost.toFixed(2)} mandays)
-            </li>
-            <li>
-              After FloorSight: {impact.after.lostMinutes} min downtime (
-              {impact.after.mandaysLost.toFixed(2)} mandays)
-            </li>
-            <li>
-              Improvement: {impact.improvementMinutes} min (
-              {impact.improvementMandays.toFixed(2)} mandays)
-            </li>
-            <li>
-              Direction:{" "}
-              {impact.direction === "UP" ? "↑ Improvement" : "— No change"}
-            </li>
+            <li>Before FloorSight: {impact.before.lostMinutes} min ({impact.before.mandaysLost.toFixed(2)} mandays)</li>
+            <li>After FloorSight: {impact.after.lostMinutes} min ({impact.after.mandaysLost.toFixed(2)} mandays)</li>
+            <li>Improvement: {impact.improvementMinutes} min ({impact.improvementMandays.toFixed(2)} mandays)</li>
+            <li>Direction: {impact.direction === "UP" ? "↑ Improvement" : "— No change"}</li>
           </ul>
         </section>
       )}
 
-      {/* LAYER 4 — ACTIONS */}
       {actions.length > 0 && (
         <section style={{ marginBottom: "32px" }}>
           <h3>Suggested Actions (Advisory)</h3>
@@ -217,10 +223,9 @@ export default function SupervisorView() {
             These are advisory suggestions. No action is automated.
           </p>
           <ul>
-            {actions.map((a) => (
+            {actions.map(a => (
               <li key={a.id}>
-                🔸 <strong>{a.title}</strong> ({a.priority}) —{" "}
-                {a.description}
+                🔸 <strong>{a.title}</strong> ({a.priority}) — {a.description}
                 <br />
                 <em>Reason:</em> {a.reason}
               </li>
@@ -229,28 +234,26 @@ export default function SupervisorView() {
         </section>
       )}
 
-      {/* LAYER 3 — SIGNALS */}
       {signals.length > 0 && (
         <section style={{ marginBottom: "32px" }}>
           <h3>Attention Signals</h3>
           <ul>
             {signals.map((s, i) => (
               <li key={i}>
-                ⚠ {s.type} — {s.houseId} ({s.durationMinutes} min,{" "}
-                {s.severity})
+                ⚠ {s.type} — {s.houseId} ({s.durationMinutes} min, {s.severity})
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      {/* EXISTING UI */}
       <h3>House Status</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px" }}>
-        {houseCardsData.map((h) => (
+        {houseCardsData.map(h => (
           <HouseCard key={h.houseId} {...h} />
         ))}
       </div>
+
 
       <section style={{ marginBottom: "var(--space-xl)", marginTop: "32px" }}>
         <h3>Downtime Analysis (Today)</h3>
@@ -314,6 +317,15 @@ export default function SupervisorView() {
           </table>
         </div>
       </section>
+    </div >
+  );
+}
+
+function LegendColor({ color, label }: { color: string, label: string }) {
+  return (
+    <div className="flex-row gap-sm">
+      <div style={{ width: "12px", height: "12px", background: color, borderRadius: "2px" }} />
+      <span>{label}</span>
     </div>
   );
 }
@@ -325,15 +337,6 @@ function MetricCard({ label, value }: { label: string; value: string | number })
     <div className="card">
       <div className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{label}</div>
       <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{value}</div>
-    </div>
-  );
-}
-
-function LegendColor({ color, label }: { color: string, label: string }) {
-  return (
-    <div className="flex-row gap-sm">
-      <div style={{ width: "12px", height: "12px", background: color, borderRadius: "2px" }} />
-      <span>{label}</span>
     </div>
   );
 }
