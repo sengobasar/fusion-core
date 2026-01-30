@@ -12,8 +12,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
         { label: "Worker", path: "/worker" },
         { label: "Supervisor", path: "/supervisor" },
         { label: "Alerts", path: "/alerts" },
-        { label: "Advisory", path: "/advisory" }, // ✅ Layer 4
-        { label: "Impact", path: "/impact" },     // ✅ Layer 5
+        { label: "Advisory", path: "/advisory" }, // Layer 4
+        { label: "Impact", path: "/impact" },     // Layer 5
+        { label: "Predictive", path: "/predictive" }, // Layer 6
         { label: "Setup", path: "/setup" },
     ];
 
@@ -73,7 +74,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                                     marginBottom: "var(--space-xs)",
                                     borderRadius: "var(--radius-sm)",
                                     textDecoration: "none",
-                                    color: isActive ? "#fff" : "#94a3b8",
+                                    color: isActive ? "#ffffff" : "#94a3b8",
                                     backgroundColor: isActive
                                         ? "rgba(255,255,255,0.1)"
                                         : "transparent",

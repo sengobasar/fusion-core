@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { dbPromise } from "../db/db";
 
 /* ================= TYPES ================= */
@@ -18,6 +19,7 @@ type Alert = {
 export default function AlertsView() {
     const [alerts, setAlerts] = useState<Alert[]>([]);
     const [filter, setFilter] = useState<"OPEN" | "ALL">("OPEN");
+    const navigate = useNavigate();
 
     useEffect(() => {
         loadAlerts();
@@ -47,7 +49,9 @@ export default function AlertsView() {
 
         alert.status = "ACKNOWLEDGED";
         await db.put("alerts", alert);
-        loadAlerts();
+
+        // 🔁 Redirect to Advisory after acknowledge
+        navigate("/advisory");
     }
 
     async function resolve(alertId: string) {
@@ -99,10 +103,7 @@ export default function AlertsView() {
 
             {/* ===== FILTER ===== */}
             <div style={{ marginBottom: "16px" }}>
-                <button
-                    onClick={() => setFilter("OPEN")}
-                    disabled={filter === "OPEN"}
-                >
+                <button onClick={() => setFilter("OPEN")} disabled={filter === "OPEN"}>
                     Open Alerts
                 </button>
                 <button
@@ -139,7 +140,9 @@ export default function AlertsView() {
                                     fontSize: "0.75rem",
                                     fontWeight: 600,
                                     color:
-                                        a.severity === "CRITICAL" ? "#ef4444" : "#f59e0b",
+                                        a.severity === "CRITICAL"
+                                            ? "#ef4444"
+                                            : "#f59e0b",
                                 }}
                             >
                                 {a.severity}
@@ -157,20 +160,21 @@ export default function AlertsView() {
                                 marginTop: "4px",
                             }}
                         >
-                            Started at: {new Date(a.startedAt).toLocaleTimeString()}
+                            Started at:{" "}
+                            {new Date(a.startedAt).toLocaleTimeString()}
                         </div>
 
                         {/* ACTIONS */}
                         {a.status === "OPEN" && (
                             <div style={{ marginTop: "12px" }}>
                                 <button onClick={() => acknowledge(a.alert_id)}>
-                                    Acknowledge
+                                    resolve it
                                 </button>
                                 <button
                                     onClick={() => resolve(a.alert_id)}
                                     style={{ marginLeft: "8px" }}
                                 >
-                                    Resolve
+                                    Resolved
                                 </button>
                             </div>
                         )}

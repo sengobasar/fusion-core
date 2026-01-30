@@ -7,6 +7,7 @@ import MainLayout from "./components/MainLayout";
 import AlertsView from "./views/AlertsView";
 import ImpactView from "./views/ImpactView";
 import AdvisoryView from "./views/AdvisoryView";
+import PredictiveView from "./views/PredictiveView";
 
 export default function App() {
   return (
@@ -20,6 +21,8 @@ export default function App() {
         <Route path="/alerts" element={<AlertsView />} />
         <Route path="/impact" element={<ImpactView />} />
         <Route path="/advisory" element={<AdvisoryView />} />
+        <Route path="/predictive" element={<PredictiveView />} />
+
 
 
       </Routes>

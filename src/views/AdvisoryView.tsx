@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { dbPromise } from "../db/db";
-import { buildAdvisoryActions, type AdvisoryAction } from "../utils/advisoryRules";
+import {
+    buildAdvisoryActions,
+    type AdvisoryAction,
+} from "../utils/advisoryRules";
 
 /* ================= TYPES ================= */
 
@@ -40,11 +43,12 @@ export default function AdvisoryView() {
             <h2>Advisory Actions</h2>
 
             <p style={{ fontSize: "0.8rem", opacity: 0.7 }}>
-                Suggested human actions based on current open alerts. No action is automated.
+                Suggested human actions based on current open alerts.
+                No action is automated.
             </p>
 
             {actions.length === 0 && (
-                <p style={{ opacity: 0.6 }}>
+                <p style={{ opacity: 0.6, marginTop: "16px" }}>
                     No advisory actions at the moment.
                 </p>
             )}
@@ -64,10 +68,17 @@ export default function AdvisoryView() {
                                 }`,
                         }}
                     >
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <div
+                            style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                            }}
+                        >
                             <strong>
                                 {a.house_id} — {a.title}
                             </strong>
+
                             <span
                                 style={{
                                     fontSize: "0.75rem",
